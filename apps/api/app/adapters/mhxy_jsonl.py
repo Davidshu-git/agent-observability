@@ -26,6 +26,7 @@ Mapping rules:
 from __future__ import annotations
 
 import glob as glob_module
+import hashlib
 import json
 import os
 from datetime import datetime, timezone
@@ -47,6 +48,19 @@ SOURCE = "mhxy_jsonl"
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _content_key(session_id: str, record: dict) -> str:
+    """
+    Stable, content-addressed key for a log record.
+    Uses session_id (from log, not file path) + SHA256 of canonical JSON.
+    Immune to file rename, rotation, or path changes.
+    80-bit hash prefix is collision-safe at mhxy session volumes.
+    """
+    digest = hashlib.sha256(
+        json.dumps(record, sort_keys=True, ensure_ascii=False).encode()
+    ).hexdigest()[:20]
+    return f"mhxy:{session_id}:{digest}"
 
 
 def _parse_ts(ts_str: str | None) -> datetime:
@@ -103,7 +117,7 @@ class MhxyJsonlAdapter:
                 except json.JSONDecodeError:
                     continue
 
-                external_key = f"{path}:{lineno}"
+                external_key = _content_key(session_id, record)
                 collected_at = _now()
 
                 # Advance trace when a user message arrives
@@ -170,7 +184,7 @@ class MhxyJsonlAdapter:
     ) -> NormalizedEvent | None:
         rtype = record.get("type")
         ts = _parse_ts(record.get("timestamp"))
-        event_id = f"mhxy:{external_key}"
+        event_id = external_key  # already "mhxy:{session_id}:{hash}"
 
         base = dict(
             event_id=event_id,

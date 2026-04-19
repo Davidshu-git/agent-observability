@@ -16,7 +16,7 @@ import json
 from datetime import datetime, timezone
 from typing import Sequence
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text as sa_text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,10 +71,15 @@ async def ingest_raw_blob(
     """
     Insert or update a raw blob.
     Returns (was_inserted, was_updated).
+
+    Uses PostgreSQL xmax to distinguish insert from update:
+      xmax = 0  → fresh insert (no prior version in this session)
+      xmax != 0 → updated (overwrote an existing row)
+      rowcount=0 → no-op (conflict existed but hash unchanged, update skipped)
     """
     payload_hash = _canonical_hash(blob.payload_json)
 
-    stmt = pg_insert(RawEventBlob).values(
+    insert_stmt = pg_insert(RawEventBlob).values(
         project_id=blob.project_id,
         source=blob.source,
         external_key=blob.external_key,
@@ -82,18 +87,22 @@ async def ingest_raw_blob(
         payload_json=blob.payload_json,
         payload_hash=payload_hash,
     )
-    stmt = stmt.on_conflict_do_update(
+    upsert_stmt = insert_stmt.on_conflict_do_update(
         constraint="uq_raw_blob_key",
         set_={
-            "payload_json": stmt.excluded.payload_json,
-            "payload_hash": stmt.excluded.payload_hash,
-            "collected_at": stmt.excluded.collected_at,
+            "payload_json": insert_stmt.excluded.payload_json,
+            "payload_hash": insert_stmt.excluded.payload_hash,
+            "collected_at": insert_stmt.excluded.collected_at,
         },
         where=RawEventBlob.payload_hash != payload_hash,
-    )
-    result = await db.execute(stmt)
-    inserted = result.rowcount > 0
-    return inserted, False
+    ).returning(sa_text("(xmax = 0) AS was_inserted"))
+
+    result = await db.execute(upsert_stmt)
+    row = result.fetchone()
+    if row is None:
+        return False, False   # skipped: same hash
+    was_inserted = bool(row[0])
+    return was_inserted, not was_inserted
 
 
 async def ingest_event(
