@@ -1,0 +1,76 @@
+import type {
+  NormalizedEvent,
+  Project,
+  SessionSummary,
+} from "@/types/events";
+
+// 使用相对路径 — Next.js rewrites 会代理到 api:8000
+const BASE = "";
+
+async function get<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
+  const qs = params
+    ? Object.entries(params)
+        .filter(([, v]) => v !== undefined && v !== null)
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+        .join("&")
+    : "";
+  const url = `${BASE}${path}${qs ? `?${qs}` : ""}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+async function post<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, { method: "POST" });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+export interface ProjectOverview {
+  project_id: string;
+  display_name: string;
+  total_sessions: number;
+  today_sessions: number;
+  last_session_at: string | null;
+  total_input_tokens: number;
+  total_output_tokens: number;
+}
+
+export interface TokenOverview {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  calls: number;
+}
+
+export interface ToolStat {
+  tool_name: string;
+  calls: number;
+}
+
+export const api = {
+  projects: () => get<Project[]>("/api/projects"),
+  overview: () => get<ProjectOverview[]>("/api/stats/overview"),
+
+  sessions: (params: {
+    project_id?: string;
+    agent_id?: string;
+    since?: string;
+    until?: string;
+    limit?: number;
+    offset?: number;
+  }) => get<SessionSummary[]>("/api/sessions", params),
+
+  session: (id: string) => get<SessionSummary & { metadata: Record<string, unknown> }>(`/api/sessions/${id}`),
+  timeline: (id: string) => get<NormalizedEvent[]>(`/api/sessions/${id}/timeline`),
+  trace: (id: string) => get<{ trace_id: string; events: NormalizedEvent[] }>(`/api/traces/${id}`),
+
+  tokensOverview: (project_id?: string) =>
+    get<TokenOverview>("/api/stats/tokens/overview", project_id ? { project_id } : undefined),
+  tools: (project_id?: string) =>
+    get<ToolStat[]>("/api/stats/tools", project_id ? { project_id } : undefined),
+  think: (params: { project_id?: string; session_id?: string; limit?: number }) =>
+    get<NormalizedEvent[]>("/api/think", params),
+
+  ingestMhxy: () => post<{ status: string; events_inserted: number }>("/api/ingest/mhxy"),
+};

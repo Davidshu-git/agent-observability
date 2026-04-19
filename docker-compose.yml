@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agent_obs}
+      POSTGRES_USER: ${POSTGRES_USER:-agent_obs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agent_obs}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-agent_obs}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-agent_obs}
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+    volumes:
+      - ${MHXY_HOST_LOG_DIR:-/volume1/server/.openclaw/workspace/projects/mhxy/logs/sessions}:/logs/mhxy/sessions:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3100:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
