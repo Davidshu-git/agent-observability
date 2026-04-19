@@ -4,112 +4,161 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import type { SessionSummary, NormalizedEvent } from "@/types/events";
 
+// ── colors ──────────────────────────────────────────────────────────────────
+
 const EVENT_COLORS: Record<string, string> = {
-  session_started: "#4ade80",
-  session_ended: "#f87171",
-  message: "#7dd3fc",
-  thought: "#c4b5fd",
-  model_call: "#fbbf24",
-  tool_call: "#fb923c",
-  tool_result: "#f97316",
-  metric: "#a3e635",
-  event: "#6ee7b7",
-  error: "#f87171",
+  session_started: "var(--green)",
+  session_ended:   "var(--red)",
+  message:         "var(--blue)",
+  thought:         "var(--purple)",
+  model_call:      "var(--amber)",
+  tool_call:       "var(--orange)",
+  tool_result:     "#fb923c",
+  metric:          "var(--teal)",
+  event:           "var(--teal)",
+  error:           "var(--red)",
 };
 
-// Stable color per agent/project key
-const AGENT_PALETTE = [
-  "#7dd3fc", "#86efac", "#fbbf24", "#c4b5fd",
-  "#fb923c", "#f472b6", "#34d399", "#a3e635",
-];
+const AGENT_PALETTE = ["var(--blue)", "var(--green)", "var(--amber)", "var(--purple)", "var(--orange)", "var(--teal)"];
 const _colorCache: Record<string, string> = {};
 let _colorIdx = 0;
 function agentColor(key: string): string {
-  if (!_colorCache[key]) {
-    _colorCache[key] = AGENT_PALETTE[_colorIdx++ % AGENT_PALETTE.length];
-  }
+  if (!_colorCache[key]) _colorCache[key] = AGENT_PALETTE[_colorIdx++ % AGENT_PALETTE.length];
   return _colorCache[key];
 }
 
+// ── helpers ──────────────────────────────────────────────────────────────────
+
 function shortId(id: string): string {
-  // tg_session_stock_bot_1095093501 → stock_bot / 1095…
   const parts = id.split("_");
   if (parts.length >= 4) return parts.slice(2, -1).join("_");
   return id.length > 22 ? id.slice(0, 10) + "…" + id.slice(-6) : id;
 }
 
 function fmtTime(s: string) {
-  const d = new Date(s);
-  return d.toLocaleTimeString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" });
+  return new Date(s).toLocaleTimeString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" });
 }
 
 function fmtDate(s: string | null | undefined) {
   if (!s) return "—";
-  const d = new Date(s);
-  return d.toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" });
+  return new Date(s).toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" });
 }
 
-// -----------------------------------------------------------------------
-// Event payload renderer
-// -----------------------------------------------------------------------
+// ── event detail renderers ────────────────────────────────────────────────────
+
 function EventDetail({ event }: { event: NormalizedEvent }) {
+  const [expanded, setExpanded] = useState(false);
   const p = event.payload as Record<string, unknown>;
   const t = event.event_type;
 
   if (t === "message") {
     const role = p.role as string;
+    const content = p.content as string;
+    const isUser = role === "user";
+    const preview = content?.length > 300 && !expanded ? content.slice(0, 300) + "…" : content;
+
     return (
-      <div>
-        <span style={{
-          background: role === "user" ? "#1e3a5f" : "#1a2e1a",
-          color: role === "user" ? "#7dd3fc" : "#86efac",
-          padding: "1px 6px", borderRadius: 3, fontSize: 10, marginRight: 6,
-        }}>
-          {role}
-        </span>
-        <span style={{ color: "#ddd", whiteSpace: "pre-wrap" }}>{p.content as string}</span>
+      <div style={{
+        background: isUser ? "rgba(96,165,250,.07)" : "rgba(52,211,153,.05)",
+        border: `1px solid ${isUser ? "rgba(96,165,250,.15)" : "rgba(52,211,153,.1)"}`,
+        borderRadius: "var(--r)",
+        padding: "8px 12px",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+          <span style={{
+            background: isUser ? "rgba(96,165,250,.2)" : "rgba(52,211,153,.15)",
+            color: isUser ? "var(--blue)" : "var(--green)",
+            padding: "1px 7px", borderRadius: 3, fontSize: 10, fontWeight: 600,
+          }}>
+            {role}
+          </span>
+        </div>
+        <div style={{ color: "var(--text)", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+          {preview}
+        </div>
+        {content?.length > 300 && (
+          <button onClick={() => setExpanded(!expanded)} style={{
+            background: "none", border: "none", color: "var(--blue)", fontSize: 11,
+            cursor: "pointer", marginTop: 4, padding: 0,
+          }}>
+            {expanded ? "收起" : "展开"}
+          </button>
+        )}
       </div>
     );
   }
 
   if (t === "thought") {
+    const content = p.content as string;
+    const preview = content?.length > 200 && !expanded ? content.slice(0, 200) + "…" : content;
     return (
-      <div>
-        <div style={{ color: "#a78bfa", fontSize: 10, marginBottom: 4 }}>
-          [{p.kind as string}] {p.provider as string}
+      <div style={{
+        background: "rgba(196,181,253,.05)",
+        border: "1px solid rgba(196,181,253,.12)",
+        borderRadius: "var(--r)",
+        padding: "8px 12px",
+      }}>
+        <div style={{ color: "rgba(196,181,253,.5)", fontSize: 10, marginBottom: 4 }}>
+          思考 · {p.provider as string}
         </div>
-        <div style={{ color: "#c4b5fd", whiteSpace: "pre-wrap", maxHeight: 200, overflow: "auto" }}>
-          {p.content as string}
+        <div style={{ color: "var(--purple)", fontSize: 12, lineHeight: 1.6, whiteSpace: "pre-wrap", opacity: 0.85 }}>
+          {preview}
         </div>
+        {content?.length > 200 && (
+          <button onClick={() => setExpanded(!expanded)} style={{
+            background: "none", border: "none", color: "var(--purple)", fontSize: 11,
+            cursor: "pointer", marginTop: 4, padding: 0,
+          }}>
+            {expanded ? "收起" : "展开"}
+          </button>
+        )}
       </div>
     );
   }
 
   if (t === "model_call") {
     const durMs = p.duration_ms as number | null;
-    const cacheHit = p.cache_read_tokens as number;
+    const cacheHit = (p.cache_read_tokens as number) || 0;
+    const ok = p.success as boolean;
     return (
-      <div style={{ fontSize: 12 }}>
-        <span style={{ color: "#fbbf24" }}>{p.model as string}</span>
-        <span style={{ color: "#666", marginLeft: 8 }}>
-          in:{p.input_tokens as number} out:{p.output_tokens as number}
-          {cacheHit > 0 ? ` cache:${cacheHit}` : ""}
-          {durMs != null ? ` ${Math.round(durMs)}ms` : ""}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ color: "var(--amber)", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600 }}>
+          {p.model as string}
         </span>
-        {!(p.success as boolean) && (
-          <span style={{ color: "#f87171", marginLeft: 8 }}>FAILED</span>
-        )}
+        <span style={{ color: "var(--text-dim)", fontSize: 11, fontFamily: "var(--font-mono)" }}>
+          ↑{(p.input_tokens as number) || 0} ↓{(p.output_tokens as number) || 0}
+          {cacheHit > 0 && <span style={{ color: "var(--teal)" }}> cache:{cacheHit}</span>}
+          {durMs != null && ` ${Math.round(durMs)}ms`}
+        </span>
+        {!ok && <span style={{ color: "var(--red)", fontSize: 11, fontWeight: 600 }}>FAILED</span>}
       </div>
     );
   }
 
   if (t === "tool_call") {
+    const args = p.arguments;
     return (
-      <div style={{ fontSize: 12 }}>
-        <span style={{ color: "#fb923c", fontWeight: "bold" }}>{p.tool_name as string}</span>
-        {p.arguments != null && (
-          <pre style={{ color: "#aaa", margin: "4px 0 0", fontSize: 11, overflow: "auto", maxHeight: 120 }}>
-            {JSON.stringify(p.arguments, null, 2)}
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ color: "var(--orange)", fontWeight: 700, fontSize: 12, fontFamily: "var(--font-mono)" }}>
+            {p.tool_name as string}
+          </span>
+          {args != null && (
+            <button onClick={() => setExpanded(!expanded)} style={{
+              background: "none", border: "none", color: "var(--text-dim)",
+              fontSize: 10, cursor: "pointer", padding: 0,
+            }}>
+              {expanded ? "▲ 隐藏参数" : "▼ 查看参数"}
+            </button>
+          )}
+        </div>
+        {expanded && args != null && (
+          <pre style={{
+            marginTop: 6, padding: "6px 8px",
+            background: "rgba(0,0,0,.4)", borderRadius: "var(--r-sm)",
+            color: "var(--text-muted)", fontSize: 11, overflow: "auto", maxHeight: 160,
+          }}>
+            {JSON.stringify(args, null, 2)}
           </pre>
         )}
       </div>
@@ -119,39 +168,59 @@ function EventDetail({ event }: { event: NormalizedEvent }) {
   if (t === "tool_result") {
     const ok = p.success as boolean;
     const durMs = p.duration_ms as number | null;
+    const result = typeof p.result === "string" ? p.result : JSON.stringify(p.result);
+    const preview = result?.length > 200 && !expanded ? result.slice(0, 200) + "…" : result;
     return (
-      <div style={{ fontSize: 12 }}>
-        <span style={{ color: ok ? "#4ade80" : "#f87171" }}>{ok ? "✓" : "✗"}</span>
-        <span style={{ color: "#aaa", marginLeft: 6 }}>{p.tool_name as string}</span>
-        {durMs != null && (
-          <span style={{ color: "#666", marginLeft: 6 }}>{Math.round(durMs)}ms</span>
-        )}
-        <div style={{ color: "#9ca3af", marginTop: 4, whiteSpace: "pre-wrap", maxHeight: 100, overflow: "auto" }}>
-          {typeof p.result === "string" ? p.result : JSON.stringify(p.result)}
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{
+            color: ok ? "var(--green)" : "var(--red)",
+            fontFamily: "var(--font-mono)", fontSize: 12,
+          }}>
+            {ok ? "✓" : "✗"} {p.tool_name as string}
+          </span>
+          {durMs != null && (
+            <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{Math.round(durMs)}ms</span>
+          )}
+          {result?.length > 200 && (
+            <button onClick={() => setExpanded(!expanded)} style={{
+              background: "none", border: "none", color: "var(--text-dim)", fontSize: 10, cursor: "pointer", padding: 0,
+            }}>
+              {expanded ? "收起" : "展开"}
+            </button>
+          )}
         </div>
+        {result && (
+          <div style={{ marginTop: 4, color: "var(--text-muted)", fontSize: 12, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)" }}>
+            {preview}
+          </div>
+        )}
       </div>
     );
   }
 
   if (t === "error") {
     return (
-      <div style={{ color: "#f87171", fontSize: 12 }}>
-        <span style={{ fontWeight: "bold" }}>{p.name as string}: </span>
+      <div style={{ color: "var(--red)", fontSize: 12 }}>
+        <span style={{ fontWeight: 700 }}>{p.name as string}: </span>
         {p.message as string}
       </div>
     );
   }
 
+  if (t === "session_started") {
+    return <div style={{ color: "var(--green)", fontSize: 12 }}>会话开始</div>;
+  }
+
   return (
-    <pre style={{ color: "#888", fontSize: 11, margin: 0, overflow: "auto", maxHeight: 120 }}>
+    <pre style={{ color: "var(--text-muted)", fontSize: 11, overflow: "auto", maxHeight: 100, margin: 0, fontFamily: "var(--font-mono)" }}>
       {JSON.stringify(p, null, 2)}
     </pre>
   );
 }
 
-// -----------------------------------------------------------------------
-// Timeline
-// -----------------------------------------------------------------------
+// ── timeline ──────────────────────────────────────────────────────────────────
+
 function Timeline({ events }: { events: NormalizedEvent[] }) {
   const [filter, setFilter] = useState<string>("all");
   const types = Array.from(new Set(events.map((e) => e.event_type)));
@@ -159,76 +228,77 @@ function Timeline({ events }: { events: NormalizedEvent[] }) {
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: "0.75rem" }}>
+      {/* filter bar */}
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: "0.75rem", alignItems: "center" }}>
         {["all", ...types].map((t) => (
-          <button key={t} onClick={() => setFilter(t)} style={{
-            padding: "2px 8px", fontSize: 11, border: "1px solid #333", borderRadius: 3,
-            background: filter === t ? "#1e3a5f" : "#1a1a1a",
-            color: filter === t ? "#7dd3fc" : EVENT_COLORS[t] ?? "#aaa",
-            cursor: "pointer",
-          }}>
-            {t}
+          <button
+            key={t}
+            onClick={() => setFilter(t)}
+            className={`tag-btn${filter === t ? " active" : ""}`}
+            style={filter === t ? {} : { color: EVENT_COLORS[t] ?? "var(--text-muted)", borderColor: "var(--border)" }}
+          >
+            {t === "all" ? "全部" : t}
           </button>
         ))}
-        <span style={{ color: "#555", fontSize: 11, marginLeft: "auto" }}>
-          {visible.length} / {events.length} 条
+        <span style={{ color: "var(--text-dim)", fontSize: 11, marginLeft: "auto", fontFamily: "var(--font-mono)" }}>
+          {visible.length} / {events.length}
         </span>
       </div>
 
+      {/* event list */}
       <div style={{ flex: 1, overflowY: "auto" }}>
-        {visible.map((e) => (
-          <div key={e.event_id} style={{
-            display: "flex", gap: "0.75rem", marginBottom: "0.5rem",
-            borderLeft: `3px solid ${EVENT_COLORS[e.event_type] ?? "#555"}`,
-            paddingLeft: "0.75rem",
-          }}>
-            <div style={{ color: "#555", fontSize: 10, width: 60, flexShrink: 0, paddingTop: 2 }}>
-              {fmtTime(e.timestamp)}
+        {visible.map((e) => {
+          const color = EVENT_COLORS[e.event_type] ?? "var(--text-dim)";
+          return (
+            <div key={e.event_id} style={{
+              display: "flex",
+              gap: "0.75rem",
+              marginBottom: "0.5rem",
+              paddingLeft: "0.75rem",
+              borderLeft: `2px solid ${color}`,
+            }}>
+              <div style={{ color: "var(--text-dim)", fontSize: 10, width: 62, flexShrink: 0, paddingTop: 2, fontFamily: "var(--font-mono)" }}>
+                {fmtTime(e.timestamp)}
+              </div>
+              <div style={{ color, fontSize: 10, width: 90, flexShrink: 0, paddingTop: 2, fontFamily: "var(--font-mono)" }}>
+                {e.event_type}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <EventDetail event={e} />
+                {e.trace_id && (
+                  <div style={{ marginTop: 4, fontSize: 10, color: "var(--text-dim)" }}>
+                    <Link href={`/traces/${e.trace_id}`} style={{ color: "var(--blue)", opacity: 0.7, fontFamily: "var(--font-mono)" }}>
+                      trace:{e.trace_id.slice(-16)}
+                    </Link>
+                  </div>
+                )}
+              </div>
             </div>
-            <div style={{ color: EVENT_COLORS[e.event_type] ?? "#aaa", fontSize: 10, width: 88, flexShrink: 0, paddingTop: 2 }}>
-              {e.event_type}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <EventDetail event={e} />
-              {e.trace_id && (
-                <div style={{ marginTop: 4, fontSize: 10, color: "#444" }}>
-                  <Link href={`/traces/${e.trace_id}`} style={{ color: "#3b82f6" }}>
-                    trace:{e.trace_id}
-                  </Link>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-        {visible.length === 0 && <p style={{ color: "#555" }}>无匹配事件</p>}
+          );
+        })}
+        {visible.length === 0 && <p style={{ color: "var(--text-dim)" }}>无匹配事件</p>}
       </div>
     </div>
   );
 }
 
-// -----------------------------------------------------------------------
-// Agent badge
-// -----------------------------------------------------------------------
+// ── agent badge ───────────────────────────────────────────────────────────────
+
 function AgentBadge({ label }: { label: string }) {
   const color = agentColor(label);
   return (
-    <span style={{
-      display: "inline-block",
-      padding: "1px 6px",
-      borderRadius: 3,
-      fontSize: 10,
-      background: color + "22",
+    <span className="badge" style={{
+      background: color + "18",
       color,
-      border: `1px solid ${color}44`,
+      border: `1px solid ${color}30`,
     }}>
       {label}
     </span>
   );
 }
 
-// -----------------------------------------------------------------------
-// Main page
-// -----------------------------------------------------------------------
+// ── main page ─────────────────────────────────────────────────────────────────
+
 export default function SessionsPage() {
   const router = useRouter();
   const projectId = (router.query.project_id as string) ?? "";
@@ -241,14 +311,12 @@ export default function SessionsPage() {
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [err, setErr] = useState("");
 
-  // Reset agent filter when project changes
   useEffect(() => { setAgentFilter("all"); }, [projectId]);
 
   useEffect(() => {
     if (!router.isReady) return;
     setLoadingSessions(true);
-    api
-      .sessions({ project_id: projectId || undefined, limit: 100 })
+    api.sessions({ project_id: projectId || undefined, limit: 100 })
       .then(setSessions)
       .catch((e) => setErr(String(e)))
       .finally(() => setLoadingSessions(false));
@@ -257,8 +325,7 @@ export default function SessionsPage() {
   useEffect(() => {
     if (!selectedId) return;
     setLoadingEvents(true);
-    api
-      .timeline(selectedId)
+    api.timeline(selectedId)
       .then(setEvents)
       .catch((e) => setErr(String(e)))
       .finally(() => setLoadingEvents(false));
@@ -272,11 +339,7 @@ export default function SessionsPage() {
     );
   }
 
-  // Derive distinct agent keys for tab bar
-  const agentKeys = Array.from(
-    new Set(sessions.map((s) => s.agent_id ?? s.project_id).filter(Boolean))
-  );
-
+  const agentKeys = Array.from(new Set(sessions.map((s) => s.agent_id ?? s.project_id).filter(Boolean)));
   const visible = agentFilter === "all"
     ? sessions
     : sessions.filter((s) => (s.agent_id ?? s.project_id) === agentFilter);
@@ -284,97 +347,114 @@ export default function SessionsPage() {
   const selectedSession = sessions.find((s) => s.id === selectedId);
 
   return (
-    <div style={{ height: "calc(100vh - 3rem)", display: "flex", flexDirection: "column" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0, color: "#fff", fontSize: 16 }}>会话时间线</h2>
+    <div style={{ height: "calc(100vh - 3.5rem)", display: "flex", flexDirection: "column" }}>
+      {/* header */}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)" }}>会话时间线</h1>
         {projectId && <AgentBadge label={projectId} />}
-        {err && <span style={{ color: "#f87171", fontSize: 12 }}>{err}</span>}
+        {err && <span style={{ color: "var(--red)", fontSize: 12 }}>{err}</span>}
       </div>
 
       <div style={{ flex: 1, display: "flex", gap: "1rem", minHeight: 0 }}>
-        {/* Left: session list */}
+        {/* left: session list */}
         <div style={{
-          width: 230, flexShrink: 0, display: "flex", flexDirection: "column",
-          borderRight: "1px solid #222", paddingRight: "0.75rem",
+          width: 220, flexShrink: 0, display: "flex", flexDirection: "column",
+          borderRight: "1px solid var(--border)", paddingRight: "1rem",
         }}>
-          {/* Bot filter tabs */}
+          {/* agent filter tabs */}
           {agentKeys.length > 1 && (
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: "0.5rem" }}>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: "0.75rem" }}>
               {["all", ...agentKeys].map((k) => (
-                <button key={k} onClick={() => setAgentFilter(k)} style={{
-                  padding: "2px 8px", fontSize: 10, borderRadius: 3, cursor: "pointer",
-                  border: agentFilter === k ? `1px solid ${agentColor(k)}88` : "1px solid #333",
-                  background: agentFilter === k ? agentColor(k) + "22" : "transparent",
-                  color: agentFilter === k ? agentColor(k) : "#666",
-                }}>
+                <button
+                  key={k}
+                  onClick={() => setAgentFilter(k)}
+                  className={`tag-btn${agentFilter === k ? " active" : ""}`}
+                  style={agentFilter === k
+                    ? { background: agentColor(k) + "22", color: agentColor(k), borderColor: agentColor(k) + "55" }
+                    : { color: "var(--text-muted)" }
+                  }
+                >
                   {k === "all" ? `全部 (${sessions.length})` : k}
                 </button>
               ))}
             </div>
           )}
 
-          {/* Session list */}
+          {/* list */}
           <div style={{ flex: 1, overflowY: "auto" }}>
-            {loadingSessions && <p style={{ color: "#555" }}>加载中…</p>}
+            {loadingSessions && (
+              <div style={{ color: "var(--text-dim)", fontSize: 12, padding: "0.5rem 0" }}>加载中…</div>
+            )}
             {visible.map((s) => {
               const botKey = s.agent_id ?? s.project_id;
               const color = agentColor(botKey);
+              const isSelected = selectedId === s.id;
               return (
                 <div
                   key={s.id}
                   onClick={() => selectSession(s.id)}
                   style={{
-                    padding: "6px 8px", borderRadius: 4, marginBottom: 4, cursor: "pointer",
-                    background: selectedId === s.id ? "#1e3a5f" : "#1a1a1a",
-                    borderLeft: `3px solid ${selectedId === s.id ? "#7dd3fc" : color + "66"}`,
+                    padding: "8px 10px",
+                    borderRadius: "var(--r)",
+                    marginBottom: 4,
+                    cursor: "pointer",
+                    background: isSelected ? "var(--blue-dim)" : "var(--surface)",
+                    border: `1px solid ${isSelected ? "rgba(96,165,250,.3)" : "var(--border)"}`,
+                    borderLeftWidth: 3,
+                    borderLeftColor: isSelected ? "var(--blue)" : color + "66",
+                    transition: "background 0.1s, border-color 0.1s",
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
                     <AgentBadge label={botKey} />
                     {!projectId && s.project_id !== botKey && (
-                      <span style={{ color: "#444", fontSize: 10 }}>{s.project_id}</span>
+                      <span style={{ color: "var(--text-dim)", fontSize: 10 }}>{s.project_id}</span>
                     )}
                   </div>
-                  <div
-                    style={{ color: selectedId === s.id ? "#7dd3fc" : "#aaa", fontSize: 11 }}
-                    title={s.id}
-                  >
+                  <div style={{
+                    color: isSelected ? "var(--blue)" : "var(--text-muted)",
+                    fontSize: 11, fontFamily: "var(--font-mono)",
+                  }} title={s.id}>
                     {shortId(s.id)}
                   </div>
-                  <div style={{ color: "#555", fontSize: 10, marginTop: 2 }}>
+                  <div style={{ color: "var(--text-dim)", fontSize: 10, marginTop: 2 }}>
                     {fmtDate(s.started_at)}
                   </div>
                 </div>
               );
             })}
             {!loadingSessions && visible.length === 0 && (
-              <p style={{ color: "#555", fontSize: 12 }}>无会话数据</p>
+              <p style={{ color: "var(--text-dim)", fontSize: 12 }}>无会话数据</p>
             )}
           </div>
         </div>
 
-        {/* Right: timeline */}
+        {/* right: timeline */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
           {selectedSession && (
             <div style={{
               display: "flex", gap: 8, alignItems: "center",
-              marginBottom: "0.5rem", paddingBottom: "0.5rem", borderBottom: "1px solid #222",
+              marginBottom: "0.75rem", paddingBottom: "0.75rem",
+              borderBottom: "1px solid var(--border)",
             }}>
               <AgentBadge label={selectedSession.agent_id ?? selectedSession.project_id} />
-              <span style={{ color: "#555", fontSize: 11 }} title={selectedSession.id}>
+              <span style={{ color: "var(--text-dim)", fontSize: 11, fontFamily: "var(--font-mono)" }} title={selectedSession.id}>
                 {selectedSession.id}
               </span>
-              <span style={{ color: "#444", fontSize: 10, marginLeft: "auto" }}>
+              <span style={{ color: "var(--text-dim)", fontSize: 11, marginLeft: "auto" }}>
                 {fmtDate(selectedSession.started_at)}
               </span>
             </div>
           )}
-          {!selectedId && <p style={{ color: "#555" }}>← 选择左侧会话查看时间线</p>}
-          {loadingEvents && <p style={{ color: "#555" }}>加载中…</p>}
+          {!selectedId && (
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <p style={{ color: "var(--text-dim)" }}>← 选择左侧会话查看时间线</p>
+            </div>
+          )}
+          {loadingEvents && <p style={{ color: "var(--text-dim)" }}>加载中…</p>}
           {!loadingEvents && selectedId && events.length > 0 && <Timeline events={events} />}
           {!loadingEvents && selectedId && events.length === 0 && (
-            <p style={{ color: "#555" }}>该会话暂无事件</p>
+            <p style={{ color: "var(--text-dim)" }}>该会话暂无事件</p>
           )}
         </div>
       </div>

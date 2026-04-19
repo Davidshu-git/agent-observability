@@ -22,26 +22,23 @@ export default function ToolsPage() {
 
   const maxCalls = tools.length > 0 ? tools[0].calls : 1;
 
+  const RANK_COLORS = ["var(--amber)", "var(--orange)", "var(--blue)"];
+
   return (
     <div>
-      <h2 style={{ margin: "0 0 1.5rem", color: "#fff", fontSize: 16 }}>工具调用分析</h2>
-      {err && <p style={{ color: "#f87171" }}>{err}</p>}
-
       <div style={{ marginBottom: "1.5rem" }}>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>工具调用分析</h1>
+        <p style={{ color: "var(--text-muted)", fontSize: 12 }}>各 Agent 工具使用频率排行</p>
+      </div>
+
+      {err && <p style={{ color: "var(--red)", marginBottom: "1rem" }}>{err}</p>}
+
+      <div style={{ display: "flex", gap: 6, marginBottom: "1.5rem" }}>
         {projects.map((p) => (
           <button
             key={p.id}
             onClick={() => setSelectedProject(p.id)}
-            style={{
-              marginRight: 8,
-              padding: "4px 12px",
-              borderRadius: 4,
-              border: "1px solid #333",
-              background: selectedProject === p.id ? "#1e3a5f" : "#1a1a1a",
-              color: selectedProject === p.id ? "#7dd3fc" : "#aaa",
-              cursor: "pointer",
-              fontSize: 12,
-            }}
+            className={`tag-btn${selectedProject === p.id ? " active" : ""}`}
           >
             {p.display_name}
           </button>
@@ -49,42 +46,48 @@ export default function ToolsPage() {
       </div>
 
       {tools.length > 0 ? (
-        <div
-          style={{
-            background: "#1a1a2e",
-            border: "1px solid #2a2a4a",
-            borderRadius: 8,
-            padding: "1.25rem",
-            maxWidth: 480,
-          }}
-        >
-          <div style={{ color: "#888", fontSize: 11, marginBottom: "0.75rem" }}>
-            工具调用次数排行 （共 {tools.length} 种工具）
+        <div className="card" style={{ maxWidth: 520 }}>
+          <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: "1rem" }}>
+            共 <strong style={{ color: "var(--text)" }}>{tools.length}</strong> 种工具
           </div>
-          {tools.map((t, i) => (
-            <div key={t.tool_name} style={{ marginBottom: "0.6rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                <span style={{ color: i < 3 ? "#fb923c" : "#aaa", fontSize: 12 }}>
-                  {i + 1}. {t.tool_name}
-                </span>
-                <span style={{ color: "#fbbf24", fontSize: 12, fontWeight: "bold" }}>
-                  {t.calls}
-                </span>
+          {tools.map((t, i) => {
+            const barPct = Math.round((t.calls / maxCalls) * 100);
+            const color = RANK_COLORS[i] ?? "var(--text-dim)";
+            return (
+              <div key={t.tool_name} style={{ marginBottom: "0.75rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{
+                      color: i < 3 ? color : "var(--text-dim)",
+                      fontSize: 10, fontWeight: 700, width: 16, textAlign: "right",
+                      fontFamily: "var(--font-mono)",
+                    }}>
+                      {i + 1}
+                    </span>
+                    <span style={{
+                      color: i < 3 ? "var(--text)" : "var(--text-muted)",
+                      fontSize: 12, fontFamily: "var(--font-mono)",
+                    }}>
+                      {t.tool_name}
+                    </span>
+                  </div>
+                  <span style={{ color, fontWeight: 700, fontSize: 12, fontFamily: "var(--font-mono)" }}>
+                    {t.calls}
+                  </span>
+                </div>
+                <div style={{ background: "var(--border)", borderRadius: 3, height: 5, overflow: "hidden", marginLeft: 24 }}>
+                  <div style={{
+                    width: `${barPct}%`, height: "100%",
+                    background: i < 3 ? color : "var(--border-hi)",
+                    transition: "width 0.4s",
+                  }} />
+                </div>
               </div>
-              <div style={{ background: "#111", borderRadius: 2, height: 6, overflow: "hidden" }}>
-                <div
-                  style={{
-                    width: `${Math.round((t.calls / maxCalls) * 100)}%`,
-                    background: i < 3 ? "#fb923c" : "#374151",
-                    height: "100%",
-                  }}
-                />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
-        !err && <p style={{ color: "#555" }}>暂无工具调用数据，请先同步日志。</p>
+        !err && <p style={{ color: "var(--text-dim)" }}>暂无工具调用数据，请先同步日志。</p>
       )}
     </div>
   );
