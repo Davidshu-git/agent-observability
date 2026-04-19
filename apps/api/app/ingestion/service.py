@@ -16,7 +16,7 @@ import json
 from datetime import datetime, timezone
 from typing import Sequence
 
-from sqlalchemy import select, text as sa_text, update
+from sqlalchemy import func as sa_func, select, text as sa_text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,7 +56,8 @@ async def upsert_session(
         set_={
             "agent_id": stmt.excluded.agent_id,
             "external_session_id": stmt.excluded.external_session_id,
-            "started_at": stmt.excluded.started_at,
+            # Keep the earliest started_at — never let a later daily file overwrite it
+            "started_at": sa_func.coalesce(Session.__table__.c.started_at, stmt.excluded.started_at),
             "status": stmt.excluded.status,
             "metadata": stmt.excluded.metadata,
         },
