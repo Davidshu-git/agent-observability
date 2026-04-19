@@ -14,11 +14,17 @@ function fmtTime(s: string | null) {
   return d.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
 }
 
+const SYNC_FN_MAP: Record<string, () => Promise<{ events_inserted: number }>> = {
+  mhxy: api.ingestMhxy,
+  "stock-bot": api.ingestStockBot,
+  "ehs-bot": api.ingestEhsBot,
+};
+
 export default function OverviewPage() {
   const [rows, setRows] = useState<ProjectOverview[]>([]);
   const [err, setErr] = useState("");
   const [syncingKey, setSyncingKey] = useState<string | null>(null);
-  const [syncMsg, setSyncMsg] = useState("");
+  const [syncMsgs, setSyncMsgs] = useState<Record<string, string>>({});
 
   function load() {
     api.overview().then(setRows).catch((e) => setErr(String(e)));
@@ -26,55 +32,30 @@ export default function OverviewPage() {
 
   useEffect(() => { load(); }, []);
 
-  async function handleSync(key: string, fn: () => Promise<{ events_inserted: number }>) {
-    setSyncingKey(key);
-    setSyncMsg("");
+  async function handleSync(projectId: string) {
+    const fn = SYNC_FN_MAP[projectId];
+    if (!fn) return;
+    setSyncingKey(projectId);
+    setSyncMsgs((m) => ({ ...m, [projectId]: "" }));
     try {
       const r = await fn();
-      setSyncMsg(`同步完成：+${r.events_inserted} 条事件`);
+      setSyncMsgs((m) => ({ ...m, [projectId]: `+${r.events_inserted} 条` }));
       load();
     } catch (e) {
-      setSyncMsg(`同步失败: ${e}`);
+      setSyncMsgs((m) => ({ ...m, [projectId]: "失败" }));
     } finally {
       setSyncingKey(null);
     }
   }
 
-  const syncButtons = [
-    { key: "mhxy", label: "mhxy", fn: api.ingestMhxy },
-    { key: "stock-bot", label: "stock-bot", fn: api.ingestStockBot },
-    { key: "ehs-bot", label: "ehs-bot", fn: api.ingestEhsBot },
-  ];
-
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0, color: "#fff" }}>全局总览</h2>
-        {syncButtons.map(({ key, label, fn }) => (
-          <button
-            key={key}
-            onClick={() => handleSync(key, fn)}
-            disabled={syncingKey !== null}
-            style={{
-              padding: "4px 12px",
-              background: syncingKey === key ? "#333" : "#1a4a7a",
-              color: "#7dd3fc",
-              border: "1px solid #2a6aaa",
-              borderRadius: 4,
-              cursor: syncingKey !== null ? "default" : "pointer",
-              fontSize: 12,
-            }}
-          >
-            {syncingKey === key ? "同步中…" : `同步 ${label}`}
-          </button>
-        ))}
-        {syncMsg && <span style={{ color: "#86efac", fontSize: 12 }}>{syncMsg}</span>}
-      </div>
+      <h2 style={{ margin: "0 0 1.5rem", color: "#fff" }}>全局总览</h2>
 
       {err && <p style={{ color: "#f87171" }}>{err}</p>}
 
       {rows.length === 0 && !err && (
-        <p style={{ color: "#666" }}>暂无数据，请点击同步按钮开始接入。</p>
+        <p style={{ color: "#666" }}>暂无数据，请点击项目卡片内的同步按钮开始接入。</p>
       )}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>
@@ -107,13 +88,38 @@ export default function OverviewPage() {
               最近：{fmtTime(p.last_session_at)}
             </div>
 
-            <div style={{ marginTop: "0.75rem" }}>
+            <div style={{ marginTop: "0.75rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
               <Link
                 href={`/sessions?project_id=${p.project_id}`}
                 style={{ color: "#7dd3fc", fontSize: 12 }}
               >
                 查看会话 →
               </Link>
+
+              {SYNC_FN_MAP[p.project_id] && (
+                <>
+                  <button
+                    onClick={() => handleSync(p.project_id)}
+                    disabled={syncingKey !== null}
+                    style={{
+                      padding: "2px 10px",
+                      background: syncingKey === p.project_id ? "#333" : "transparent",
+                      color: syncingKey === p.project_id ? "#666" : "#4a8aaa",
+                      border: "1px solid #2a4a5a",
+                      borderRadius: 4,
+                      cursor: syncingKey !== null ? "default" : "pointer",
+                      fontSize: 11,
+                    }}
+                  >
+                    {syncingKey === p.project_id ? "同步中…" : "同步"}
+                  </button>
+                  {syncMsgs[p.project_id] && (
+                    <span style={{ color: "#86efac", fontSize: 11 }}>
+                      {syncMsgs[p.project_id]}
+                    </span>
+                  )}
+                </>
+              )}
             </div>
           </div>
         ))}
