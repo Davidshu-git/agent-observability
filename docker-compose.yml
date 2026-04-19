@@ -27,8 +27,13 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-agent_obs}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-agent_obs}
       API_HOST: 0.0.0.0
       API_PORT: 8000
+      MHXY_LOG_DIR: /logs/mhxy/sessions
+      OMNIBOT_STOCK_LOG_DIR: /logs/omnibot/stock/sessions
+      OMNIBOT_EHS_LOG_DIR: /logs/omnibot/ehs/sessions
     volumes:
       - ${MHXY_HOST_LOG_DIR:-/volume1/server/.openclaw/workspace/projects/mhxy/logs/sessions}:/logs/mhxy/sessions:ro
+      - ${OMNIBOT_STOCK_HOST_LOG_DIR:-/volume1/server/.openclaw/workspace/projects/omnibot/data/stock/observability/sessions}:/logs/omnibot/stock/sessions:ro
+      - ${OMNIBOT_EHS_HOST_LOG_DIR:-/volume1/server/.openclaw/workspace/projects/omnibot/data/ehs/observability/sessions}:/logs/omnibot/ehs/sessions:ro
     depends_on:
       db:
         condition: service_healthy

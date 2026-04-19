@@ -1,9 +1,8 @@
 """
-File watcher — monitors the mhxy log directory via inotify (watchdog).
+File watcher — monitors log directories via inotify (watchdog).
 
 When a .jsonl file is created or modified, a debounced ingest is triggered.
-Debounce window: 2 seconds after the last write event on the same file,
-so a single session being actively written only triggers one ingest.
+Debounce window: 2 seconds after the last write event on the same file.
 
 Bridge: watchdog runs in a background thread; ingest runs as an asyncio
 coroutine. We use asyncio.run_coroutine_threadsafe() to cross the boundary.
@@ -22,7 +21,6 @@ from watchdog.observers import Observer
 
 log = logging.getLogger(__name__)
 
-# Debounce window in seconds
 DEBOUNCE_SECONDS = 2.0
 
 
@@ -58,25 +56,42 @@ class _JsonlHandler(FileSystemEventHandler):
             self._schedule(str(event.src_path))
 
 
-class LogWatcher:
-    def __init__(self, log_dir: str, ingest_fn):
-        self._log_dir = log_dir
-        self._ingest_fn = ingest_fn
+class MultiLogWatcher:
+    """Watches multiple (log_dir, ingest_fn) pairs with a single Observer."""
+
+    def __init__(self, targets: list[tuple[str, object]]) -> None:
+        """
+        targets: list of (log_dir, ingest_fn) pairs.
+        ingest_fn must be a zero-argument callable returning a coroutine.
+        """
+        self._targets = targets
         self._observer: Observer | None = None
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
-        if not os.path.isdir(self._log_dir):
-            log.warning("watcher: log_dir not found: %s — watcher disabled", self._log_dir)
-            return
-
-        handler = _JsonlHandler(loop=loop, ingest_fn=self._ingest_fn)
         self._observer = Observer()
-        self._observer.schedule(handler, self._log_dir, recursive=True)
-        self._observer.start()
-        log.info("watcher: watching %s", self._log_dir)
+        scheduled = 0
+        for log_dir, ingest_fn in self._targets:
+            if not os.path.isdir(log_dir):
+                log.warning("watcher: log_dir not found: %s — skipping", log_dir)
+                continue
+            handler = _JsonlHandler(loop=loop, ingest_fn=ingest_fn)
+            self._observer.schedule(handler, log_dir, recursive=True)
+            log.info("watcher: watching %s", log_dir)
+            scheduled += 1
+
+        if scheduled > 0:
+            self._observer.start()
+        else:
+            log.warning("watcher: no valid directories to watch — observer not started")
 
     def stop(self) -> None:
         if self._observer and self._observer.is_alive():
             self._observer.stop()
             self._observer.join()
             log.info("watcher: stopped")
+
+
+# Backward-compatible alias
+class LogWatcher(MultiLogWatcher):
+    def __init__(self, log_dir: str, ingest_fn) -> None:
+        super().__init__([(log_dir, ingest_fn)])

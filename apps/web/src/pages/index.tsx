@@ -17,7 +17,7 @@ function fmtTime(s: string | null) {
 export default function OverviewPage() {
   const [rows, setRows] = useState<ProjectOverview[]>([]);
   const [err, setErr] = useState("");
-  const [syncing, setSyncing] = useState(false);
+  const [syncingKey, setSyncingKey] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState("");
 
   function load() {
@@ -26,46 +26,55 @@ export default function OverviewPage() {
 
   useEffect(() => { load(); }, []);
 
-  async function handleSync() {
-    setSyncing(true);
+  async function handleSync(key: string, fn: () => Promise<{ events_inserted: number }>) {
+    setSyncingKey(key);
     setSyncMsg("");
     try {
-      const r = await api.ingestMhxy();
+      const r = await fn();
       setSyncMsg(`同步完成：+${r.events_inserted} 条事件`);
       load();
     } catch (e) {
       setSyncMsg(`同步失败: ${e}`);
     } finally {
-      setSyncing(false);
+      setSyncingKey(null);
     }
   }
 
+  const syncButtons = [
+    { key: "mhxy", label: "mhxy", fn: api.ingestMhxy },
+    { key: "stock-bot", label: "stock-bot", fn: api.ingestStockBot },
+    { key: "ehs-bot", label: "ehs-bot", fn: api.ingestEhsBot },
+  ];
+
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, color: "#fff" }}>全局总览</h2>
-        <button
-          onClick={handleSync}
-          disabled={syncing}
-          style={{
-            padding: "4px 12px",
-            background: syncing ? "#333" : "#1a4a7a",
-            color: "#7dd3fc",
-            border: "1px solid #2a6aaa",
-            borderRadius: 4,
-            cursor: syncing ? "default" : "pointer",
-            fontSize: 12,
-          }}
-        >
-          {syncing ? "同步中…" : "同步 mhxy 日志"}
-        </button>
+        {syncButtons.map(({ key, label, fn }) => (
+          <button
+            key={key}
+            onClick={() => handleSync(key, fn)}
+            disabled={syncingKey !== null}
+            style={{
+              padding: "4px 12px",
+              background: syncingKey === key ? "#333" : "#1a4a7a",
+              color: "#7dd3fc",
+              border: "1px solid #2a6aaa",
+              borderRadius: 4,
+              cursor: syncingKey !== null ? "default" : "pointer",
+              fontSize: 12,
+            }}
+          >
+            {syncingKey === key ? "同步中…" : `同步 ${label}`}
+          </button>
+        ))}
         {syncMsg && <span style={{ color: "#86efac", fontSize: 12 }}>{syncMsg}</span>}
       </div>
 
       {err && <p style={{ color: "#f87171" }}>{err}</p>}
 
       {rows.length === 0 && !err && (
-        <p style={{ color: "#666" }}>暂无数据，点击「同步 mhxy 日志」开始接入。</p>
+        <p style={{ color: "#666" }}>暂无数据，请点击同步按钮开始接入。</p>
       )}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>

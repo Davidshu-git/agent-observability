@@ -1,7 +1,7 @@
 """
-Minimal query API — Phase 5 endpoints.
+Query API + ingest triggers.
 
-All responses are based on the unified schema; no raw mhxy fields leak here.
+All responses are based on the unified schema; no source-specific fields leak here.
 """
 
 from __future__ import annotations
@@ -263,35 +263,41 @@ async def list_think(
 
 
 # ---------------------------------------------------------------------------
-# Ingest core logic — shared by HTTP endpoint and file watcher
+# Generic JSONL ingest — shared by all JSONL-based data sources
 # ---------------------------------------------------------------------------
 
-async def run_mhxy_ingest(force: bool = False) -> dict:
+async def run_jsonl_ingest(
+    *,
+    project_id: str,
+    source_type: str,
+    display_name: str,
+    log_dir: str,
+    adapter,
+    agents: list[dict],  # list of {id, name, display_name, kind}
+    force: bool = False,
+) -> dict:
     """
-    Incremental sync of mhxy JSONL logs.
+    Incremental JSONL ingest for any adapter that implements the discover/scan/load interface.
     Uses data_sources.last_sync_cursor (file mtime map) to skip unchanged files.
-    Idempotent — ingestion service deduplicates at the event level.
+    Idempotent — event-level deduplication via ON CONFLICT DO NOTHING.
     """
     import json as _json
     from datetime import timezone
     from sqlalchemy import update as sa_update
     from sqlalchemy.dialects.postgresql import insert as pg_insert
-    from app.adapters.mhxy_jsonl import MhxyJsonlAdapter
     from app.ingestion.service import ingest_batch, upsert_session
     from app.db.models import DataSource
 
-    log_dir = os.getenv("MHXY_LOG_DIR", "/logs/mhxy/sessions")
-    adapter = MhxyJsonlAdapter(log_dir=log_dir)
-
     async with AsyncSessionLocal() as db:
-        await _ensure_project(db, "mhxy", "梦幻西游 Bot", "mhxy_jsonl")
-        await _ensure_agent(db, "game-bot", "mhxy", "game-bot", "游戏操控 Bot", "bot")
+        await _ensure_project(db, project_id, display_name, source_type)
+        for ag in agents:
+            await _ensure_agent(db, ag["id"], project_id, ag["name"], ag["display_name"], ag["kind"])
 
         await db.execute(
             pg_insert(DataSource).values(
-                project_id="mhxy",
-                source_type="mhxy_jsonl",
-                display_name="mhxy JSONL logs",
+                project_id=project_id,
+                source_type=source_type,
+                display_name=display_name,
                 enabled=True,
                 config_json={"log_dir": log_dir},
             ).on_conflict_do_nothing()
@@ -300,7 +306,7 @@ async def run_mhxy_ingest(force: bool = False) -> dict:
 
         ds_result = await db.execute(
             select(DataSource)
-            .where(DataSource.project_id == "mhxy", DataSource.source_type == "mhxy_jsonl")
+            .where(DataSource.project_id == project_id, DataSource.source_type == source_type)
             .order_by(DataSource.id.desc())
             .limit(1)
         )
@@ -328,18 +334,31 @@ async def run_mhxy_ingest(force: bool = False) -> dict:
 
             sources_scanned += 1
             for session_ref in adapter.scan_sessions(source):
-                await upsert_session(db, session_id=session_ref.session_id,
-                                     project_id="mhxy", agent_id="game-bot",
-                                     external_session_id=session_ref.session_id)
+                # Determine agent_id: use session metadata if available, else first agent
+                session_agent_id = (
+                    session_ref.metadata.get("agent_id")
+                    or (agents[0]["id"] if agents else None)
+                )
+                await upsert_session(
+                    db,
+                    session_id=session_ref.session_id,
+                    project_id=project_id,
+                    agent_id=session_agent_id,
+                    external_session_id=session_ref.session_id,
+                )
 
                 raw_blobs, events = adapter.load_events(session_ref)
 
                 for ev in events:
                     if ev.event_type.value == "session_started":
-                        await upsert_session(db, session_id=session_ref.session_id,
-                                             project_id="mhxy", agent_id="game-bot",
-                                             external_session_id=session_ref.session_id,
-                                             started_at=ev.timestamp)
+                        await upsert_session(
+                            db,
+                            session_id=session_ref.session_id,
+                            project_id=project_id,
+                            agent_id=session_agent_id,
+                            external_session_id=session_ref.session_id,
+                            started_at=ev.timestamp,
+                        )
                         break
 
                 counts = await ingest_batch(db, raw_blobs=raw_blobs, events=events)
@@ -356,12 +375,72 @@ async def run_mhxy_ingest(force: bool = False) -> dict:
             )
             await db.commit()
 
-    return {"sources_total": len(sources), "sources_scanned": sources_scanned,
-            "sources_skipped": sources_skipped, **total}
+    return {
+        "sources_total": len(sources),
+        "sources_scanned": sources_scanned,
+        "sources_skipped": sources_skipped,
+        **total,
+    }
 
 
 # ---------------------------------------------------------------------------
-# Ingest trigger (HTTP endpoint — thin wrapper around run_mhxy_ingest)
+# Per-source ingest wrappers — used by HTTP endpoints and startup/watcher
+# ---------------------------------------------------------------------------
+
+async def run_mhxy_ingest(force: bool = False) -> dict:
+    from app.adapters.mhxy_jsonl import MhxyJsonlAdapter
+    log_dir = os.getenv("MHXY_LOG_DIR", "/logs/mhxy/sessions")
+    return await run_jsonl_ingest(
+        project_id="mhxy",
+        source_type="mhxy_jsonl",
+        display_name="梦幻西游 Bot JSONL logs",
+        log_dir=log_dir,
+        adapter=MhxyJsonlAdapter(log_dir=log_dir),
+        agents=[{"id": "game-bot", "name": "game-bot", "display_name": "游戏操控 Bot", "kind": "bot"}],
+        force=force,
+    )
+
+
+async def run_stock_bot_ingest(force: bool = False) -> dict:
+    from app.adapters.omnibot_jsonl import OmnibotJsonlAdapter
+    stock_dir = os.getenv("OMNIBOT_STOCK_LOG_DIR", "/logs/omnibot/stock/sessions")
+    return await run_jsonl_ingest(
+        project_id="stock-bot",
+        source_type="omnibot_jsonl",
+        display_name="OmniStock 量化助理",
+        log_dir=stock_dir,
+        adapter=OmnibotJsonlAdapter(log_dir=stock_dir, project_id="stock-bot"),
+        agents=[{"id": "stock-bot", "name": "stock-bot", "display_name": "OmniStock 量化助理", "kind": "assistant"}],
+        force=force,
+    )
+
+
+async def run_ehs_bot_ingest(force: bool = False) -> dict:
+    from app.adapters.omnibot_jsonl import OmnibotJsonlAdapter
+    ehs_dir = os.getenv("OMNIBOT_EHS_LOG_DIR", "/logs/omnibot/ehs/sessions")
+    return await run_jsonl_ingest(
+        project_id="ehs-bot",
+        source_type="omnibot_jsonl",
+        display_name="OmniEHS 安全合规助理",
+        log_dir=ehs_dir,
+        adapter=OmnibotJsonlAdapter(log_dir=ehs_dir, project_id="ehs-bot"),
+        agents=[{"id": "ehs-bot", "name": "ehs-bot", "display_name": "OmniEHS 安全合规助理", "kind": "assistant"}],
+        force=force,
+    )
+
+
+async def run_omnibot_ingest(force: bool = False) -> dict:
+    r1 = await run_stock_bot_ingest(force=force)
+    r2 = await run_ehs_bot_ingest(force=force)
+    merged = {}
+    for key in ("sources_total", "sources_scanned", "sources_skipped",
+                "raw_inserted", "raw_updated", "events_inserted", "events_skipped"):
+        merged[key] = r1.get(key, 0) + r2.get(key, 0)
+    return merged
+
+
+# ---------------------------------------------------------------------------
+# HTTP ingest endpoints
 # ---------------------------------------------------------------------------
 
 @router.post("/ingest/mhxy")
@@ -369,6 +448,24 @@ async def ingest_mhxy(
     force: bool = Query(False, description="Force full re-scan even if file unchanged"),
 ):
     result = await run_mhxy_ingest(force=force)
+    return {"status": "ok", **result}
+
+
+@router.post("/ingest/stock-bot")
+async def ingest_stock_bot(force: bool = Query(False)):
+    result = await run_stock_bot_ingest(force=force)
+    return {"status": "ok", **result}
+
+
+@router.post("/ingest/ehs-bot")
+async def ingest_ehs_bot(force: bool = Query(False)):
+    result = await run_ehs_bot_ingest(force=force)
+    return {"status": "ok", **result}
+
+
+@router.post("/ingest/omnibot")
+async def ingest_omnibot(force: bool = Query(False)):
+    result = await run_omnibot_ingest(force=force)
     return {"status": "ok", **result}
 
 

@@ -73,4 +73,6 @@ export const api = {
     get<NormalizedEvent[]>("/api/think", params),
 
   ingestMhxy: () => post<{ status: string; events_inserted: number }>("/api/ingest/mhxy"),
+  ingestStockBot: () => post<{ status: string; events_inserted: number }>("/api/ingest/stock-bot"),
+  ingestEhsBot: () => post<{ status: string; events_inserted: number }>("/api/ingest/ehs-bot"),
 };
