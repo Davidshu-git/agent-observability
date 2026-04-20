@@ -3,71 +3,111 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import type { NormalizedEvent } from "@/types/events";
+import CopyableId from "@/components/CopyableId";
 
 const EVENT_COLORS: Record<string, string> = {
-  session_started: "#4ade80",
-  session_ended: "#f87171",
-  message: "#7dd3fc",
-  thought: "#c4b5fd",
-  model_call: "#fbbf24",
-  tool_call: "#fb923c",
-  tool_result: "#f97316",
-  metric: "#a3e635",
-  event: "#6ee7b7",
-  error: "#f87171",
+  session_started: "var(--green)",
+  session_ended:   "var(--red)",
+  message:         "var(--blue)",
+  thought:         "var(--purple)",
+  model_call:      "var(--amber)",
+  tool_call:       "var(--orange)",
+  tool_result:     "var(--orange)",
+  metric:          "var(--teal)",
+  event:           "var(--teal)",
+  error:           "var(--red)",
 };
 
 function fmtTime(s: string) {
   return new Date(s).toLocaleTimeString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" });
 }
 
+function fmt(n: number) {
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
 function PayloadView({ event }: { event: NormalizedEvent }) {
+  const [expanded, setExpanded] = useState(false);
   const p = event.payload as Record<string, unknown>;
   const t = event.event_type;
 
   if (t === "message") {
+    const content = p.content as string;
     return (
       <div>
-        <span style={{ color: "#7dd3fc", fontSize: 11, marginRight: 8 }}>[{p.role as string}]</span>
-        <span style={{ color: "#ddd", whiteSpace: "pre-wrap" }}>{p.content as string}</span>
+        <span style={{ color: "var(--blue)", fontSize: 11, marginRight: 8, fontFamily: "var(--font-mono)" }}>
+          [{p.role as string}]
+        </span>
+        <span style={{ color: "var(--text)", whiteSpace: "pre-wrap", fontSize: 12 }}>{content}</span>
       </div>
     );
   }
   if (t === "thought") {
+    const content = p.content as string;
+    const truncated = !expanded && content?.length > 200;
     return (
       <div>
-        <div style={{ color: "#a78bfa", fontSize: 10, marginBottom: 3 }}>
-          think / {p.kind as string}
+        <div style={{ color: "var(--purple)", opacity: 0.6, fontSize: 10, marginBottom: 3 }}>
+          💭 {p.kind as string}
         </div>
-        <div style={{ color: "#c4b5fd", whiteSpace: "pre-wrap", maxHeight: 180, overflow: "auto" }}>
-          {p.content as string}
+        <div style={{ color: "var(--purple)", whiteSpace: "pre-wrap", fontSize: 12, opacity: 0.85 }}>
+          {truncated ? content.slice(0, 200) + "…" : content}
         </div>
+        {content?.length > 200 && (
+          <button onClick={() => setExpanded(!expanded)} style={{
+            background: "none", border: "none", color: "var(--purple)", fontSize: 10,
+            cursor: "pointer", padding: 0, marginTop: 3,
+          }}>
+            {expanded ? "收起" : "展开"}
+          </button>
+        )}
       </div>
     );
   }
   if (t === "model_call") {
-    const cacheHit = p.cache_read_tokens as number;
+    const cacheHit = (p.cache_read_tokens as number) || 0;
     const durMs = p.duration_ms as number | null;
     return (
-      <div style={{ fontSize: 12 }}>
-        <span style={{ color: "#fbbf24", fontWeight: "bold" }}>{p.model as string}</span>
-        <span style={{ color: "#666", marginLeft: 10 }}>
-          {`in:${p.input_tokens as number} out:${p.output_tokens as number}`}
-          {cacheHit > 0 ? ` cache:${cacheHit}` : ""}
-          {durMs != null ? ` ${Math.round(durMs)}ms` : ""}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ color: "var(--amber)", fontWeight: 700, fontFamily: "var(--font-mono)", fontSize: 12 }}>
+          {p.model as string}
+        </span>
+        <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+          ↑{p.input_tokens as number} ↓{p.output_tokens as number}
+          {cacheHit > 0 && <span style={{ color: "var(--teal)" }}> cache:{cacheHit}</span>}
+          {durMs != null && ` ${Math.round(durMs)}ms`}
         </span>
         {event.run_id && (
-          <span style={{ color: "#444", marginLeft: 10, fontSize: 10 }}>run:{event.run_id}</span>
+          <span style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)" }}>
+            run:{event.run_id.slice(-8)}
+          </span>
         )}
       </div>
     );
   }
   if (t === "tool_call") {
     return (
-      <div style={{ fontSize: 12 }}>
-        <span style={{ color: "#fb923c", fontWeight: "bold" }}>→ {p.tool_name as string}</span>
-        {p.arguments != null && (
-          <pre style={{ color: "#888", margin: "4px 0 0", fontSize: 10, overflow: "auto", maxHeight: 100 }}>
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ color: "var(--orange)", fontWeight: 700, fontFamily: "var(--font-mono)", fontSize: 12 }}>
+            ⚙ {p.tool_name as string}
+          </span>
+          {p.arguments != null && (
+            <button onClick={() => setExpanded(!expanded)} style={{
+              background: "none", border: "none", color: "var(--text-dim)",
+              fontSize: 10, cursor: "pointer", padding: 0,
+            }}>
+              {expanded ? "▲" : "▼ 参数"}
+            </button>
+          )}
+        </div>
+        {expanded && p.arguments != null && (
+          <pre style={{
+            marginTop: 4, padding: "6px 10px",
+            background: "rgba(0,0,0,.4)", borderRadius: "var(--r-sm)",
+            color: "var(--text-muted)", fontSize: 10, overflow: "auto", maxHeight: 120,
+          }}>
             {JSON.stringify(p.arguments, null, 2)}
           </pre>
         )}
@@ -77,23 +117,40 @@ function PayloadView({ event }: { event: NormalizedEvent }) {
   if (t === "tool_result") {
     const ok = p.success as boolean;
     const durMs = p.duration_ms as number | null;
+    const result = typeof p.result === "string" ? p.result : JSON.stringify(p.result);
+    const truncated = !expanded && (result?.length ?? 0) > 200;
     return (
-      <div style={{ fontSize: 12 }}>
-        <span style={{ color: ok ? "#4ade80" : "#f87171" }}>{ok ? "✓" : "✗"}</span>
-        <span style={{ color: "#aaa", marginLeft: 6 }}>{p.tool_name as string}</span>
-        {durMs != null && (
-          <span style={{ color: "#555", marginLeft: 6 }}>{Math.round(durMs)}ms</span>
-        )}
-        {p.result != null && (
-          <div style={{ color: "#9ca3af", marginTop: 3, fontSize: 11, whiteSpace: "pre-wrap", maxHeight: 100, overflow: "auto" }}>
-            {typeof p.result === "string" ? p.result : JSON.stringify(p.result)}
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ color: ok ? "var(--green)" : "var(--red)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+            {ok ? "✓" : "✗"} {p.tool_name as string}
+          </span>
+          {durMs != null && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{Math.round(durMs)}ms</span>}
+          {(result?.length ?? 0) > 200 && (
+            <button onClick={() => setExpanded(!expanded)} style={{
+              background: "none", border: "none", color: "var(--text-dim)", fontSize: 10, cursor: "pointer", padding: 0,
+            }}>
+              {expanded ? "收起" : "展开"}
+            </button>
+          )}
+        </div>
+        {result && (
+          <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 3, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)" }}>
+            {truncated ? result.slice(0, 200) + "…" : result}
           </div>
         )}
       </div>
     );
   }
+  if (t === "error") {
+    return (
+      <div style={{ color: "var(--red)", fontSize: 12 }}>
+        <strong>{p.name as string}: </strong>{p.message as string}
+      </div>
+    );
+  }
   return (
-    <pre style={{ color: "#777", fontSize: 10, margin: 0, overflow: "auto", maxHeight: 80 }}>
+    <pre style={{ color: "var(--text-muted)", fontSize: 10, overflow: "auto", maxHeight: 80, margin: 0 }}>
       {JSON.stringify(p, null, 2)}
     </pre>
   );
@@ -116,85 +173,107 @@ export default function TraceDetailPage() {
   }, [traceId]);
 
   const sessionId = events[0]?.session_id;
+  const projectId = events[0]?.project_id;
+
+  const modelCalls = events.filter((e) => e.event_type === "model_call");
+  const toolCalls  = events.filter((e) => e.event_type === "tool_call");
+  const inTok  = modelCalls.reduce((s, e) => s + (((e.payload as Record<string,unknown>).input_tokens as number) || 0), 0);
+  const outTok = modelCalls.reduce((s, e) => s + (((e.payload as Record<string,unknown>).output_tokens as number) || 0), 0);
+  const firstTs = events[0]?.timestamp;
+  const lastTs  = events[events.length - 1]?.timestamp;
+  const durMs = firstTs && lastTs
+    ? new Date(lastTs).getTime() - new Date(firstTs).getTime()
+    : null;
 
   return (
     <div>
-      <div style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
-        <h2 style={{ margin: 0, color: "#fff", fontSize: 16 }}>Trace 详情</h2>
-        <span style={{ color: "#555", fontSize: 12, fontFamily: "monospace" }}>{traceId}</span>
+      {/* breadcrumb */}
+      <div className="breadcrumb" style={{ marginBottom: "1.25rem" }}>
+        <Link href="/">总览</Link>
+        <span className="breadcrumb-sep">›</span>
         {sessionId && (
-          <Link
-            href={`/sessions?session_id=${sessionId}&project_id=mhxy`}
-            style={{ color: "#7dd3fc", fontSize: 12 }}
-          >
-            ← 返回会话
-          </Link>
+          <>
+            <Link href={`/sessions?session_id=${sessionId}${projectId ? `&project_id=${projectId}` : ""}`}>
+              会话
+            </Link>
+            <span className="breadcrumb-sep">›</span>
+          </>
         )}
+        <span className="breadcrumb-current">Trace 详情</span>
+        <CopyableId id={traceId ?? ""} truncate={32} />
       </div>
 
-      {err && <p style={{ color: "#f87171" }}>{err}</p>}
-      {loading && <p style={{ color: "#555" }}>加载中…</p>}
+      {err && <p style={{ color: "var(--red)", marginBottom: "1rem" }}>{err}</p>}
+      {loading && <p style={{ color: "var(--text-dim)" }}>加载中…</p>}
 
-      {/* Summary bar */}
+      {/* summary cards */}
       {events.length > 0 && (
-        <div style={{ display: "flex", gap: "1.5rem", marginBottom: "1.25rem", fontSize: 12, color: "#888" }}>
-          <span>{events.length} 条事件</span>
-          {(() => {
-            const mc = events.filter((e) => e.event_type === "model_call");
-            const tc = events.filter((e) => e.event_type === "tool_call");
-            const inTok = mc.reduce((s, e) => s + ((e.payload as Record<string,unknown>).input_tokens as number || 0), 0);
-            const outTok = mc.reduce((s, e) => s + ((e.payload as Record<string,unknown>).output_tokens as number || 0), 0);
-            return (
-              <>
-                <span>模型调用 {mc.length} 次</span>
-                <span>工具调用 {tc.length} 次</span>
-                <span style={{ color: "#fbbf24" }}>in:{inTok} out:{outTok} tokens</span>
-              </>
-            );
-          })()}
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
+          <SummaryCard label="总事件" value={String(events.length)} color="var(--text)" />
+          {durMs != null && (
+            <SummaryCard label="总耗时" value={`${(durMs / 1000).toFixed(2)}s`} color="var(--teal)" />
+          )}
+          <SummaryCard label="模型调用" value={String(modelCalls.length)} color="var(--amber)" />
+          <SummaryCard label="工具调用" value={String(toolCalls.length)} color="var(--orange)" />
+          <SummaryCard label="输入 Token" value={fmt(inTok)} color="var(--blue)" />
+          <SummaryCard label="输出 Token" value={fmt(outTok)} color="var(--green)" />
         </div>
       )}
 
-      {/* Event list */}
-      <div style={{ borderLeft: "2px solid #222", paddingLeft: "1rem" }}>
-        {events.map((e, i) => (
-          <div
-            key={e.event_id}
-            style={{
-              display: "flex",
-              gap: "0.75rem",
-              marginBottom: "0.6rem",
-              position: "relative",
-            }}
-          >
-            {/* dot */}
+      {/* event list */}
+      <div className="trace-timeline">
+        {events.map((e) => {
+          const color = EVENT_COLORS[e.event_type] ?? "var(--text-dim)";
+          const isError = e.event_type === "error";
+          return (
             <div
+              key={e.event_id}
+              className={isError ? "event-error" : ""}
               style={{
-                position: "absolute",
-                left: "-1.25rem",
-                top: 4,
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: EVENT_COLORS[e.event_type] ?? "#555",
+                display: "flex",
+                gap: "0.75rem",
+                marginBottom: "0.6rem",
+                position: "relative",
               }}
-            />
-            <div style={{ color: "#555", fontSize: 10, width: 56, flexShrink: 0, paddingTop: 2 }}>
-              {fmtTime(e.timestamp)}
+            >
+              <div
+                className="trace-dot"
+                style={{ background: color }}
+              />
+              <div style={{ color: "var(--text-dim)", fontSize: 10, width: 56, flexShrink: 0, paddingTop: 2, fontFamily: "var(--font-mono)" }}>
+                {fmtTime(e.timestamp)}
+              </div>
+              <div style={{ color, fontSize: 10, width: 84, flexShrink: 0, paddingTop: 2, fontFamily: "var(--font-mono)" }}>
+                {e.event_type}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <PayloadView event={e} />
+              </div>
             </div>
-            <div style={{ color: EVENT_COLORS[e.event_type] ?? "#aaa", fontSize: 10, width: 80, flexShrink: 0, paddingTop: 2 }}>
-              {e.event_type}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <PayloadView event={e} />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {!loading && events.length === 0 && !err && (
-        <p style={{ color: "#555" }}>Trace 暂无事件</p>
+        <p style={{ color: "var(--text-dim)" }}>Trace 暂无事件</p>
       )}
+    </div>
+  );
+}
+
+function SummaryCard({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{
+      background: "var(--card)",
+      border: "1px solid var(--border)",
+      borderRadius: "var(--r)",
+      padding: "10px 16px",
+      minWidth: 100,
+    }}>
+      <div className="stat-label">{label}</div>
+      <div style={{ color, fontWeight: 700, fontSize: 18, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>
+        {value}
+      </div>
     </div>
   );
 }
