@@ -76,7 +76,6 @@ export default function TokensPage() {
 
             <TokenRow label="输入" value={fmt(overview.input_tokens)} raw={overview.input_tokens} max={total} color="var(--blue)" />
             <TokenRow label="输出" value={fmt(overview.output_tokens)} raw={overview.output_tokens} max={total} color="var(--green)" />
-            <TokenRow label="缓存命中" value={fmt(overview.cache_read_tokens)} raw={overview.cache_read_tokens} max={total} color="var(--amber)" />
 
             <div style={{ marginTop: "1rem", paddingTop: "0.75rem", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ color: "var(--text-muted)", fontSize: 12 }}>合计（输入 + 输出）</span>
