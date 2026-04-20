@@ -138,7 +138,6 @@ function EventDetail({ event }: { event: NormalizedEvent }) {
 
   if (t === "model_call") {
     const durMs = p.duration_ms as number | null;
-    const cacheHit = (p.cache_read_tokens as number) || 0;
     const ok = p.success as boolean;
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -147,7 +146,6 @@ function EventDetail({ event }: { event: NormalizedEvent }) {
         </span>
         <span style={{ color: "var(--text-dim)", fontSize: 11, fontFamily: "var(--font-mono)" }}>
           ↑{(p.input_tokens as number) || 0} ↓{(p.output_tokens as number) || 0}
-          {cacheHit > 0 && <span style={{ color: "var(--teal)" }}> cache:{cacheHit}</span>}
           {durMs != null && ` ${Math.round(durMs)}ms`}
         </span>
         {!ok && <span style={{ color: "var(--red)", fontSize: 11, fontWeight: 600 }}>FAILED</span>}

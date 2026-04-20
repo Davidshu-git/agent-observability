@@ -66,7 +66,6 @@ function PayloadView({ event }: { event: NormalizedEvent }) {
     );
   }
   if (t === "model_call") {
-    const cacheHit = (p.cache_read_tokens as number) || 0;
     const durMs = p.duration_ms as number | null;
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -75,7 +74,6 @@ function PayloadView({ event }: { event: NormalizedEvent }) {
         </span>
         <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
           ↑{p.input_tokens as number} ↓{p.output_tokens as number}
-          {cacheHit > 0 && <span style={{ color: "var(--teal)" }}> cache:{cacheHit}</span>}
           {durMs != null && ` ${Math.round(durMs)}ms`}
         </span>
         {event.run_id && (
