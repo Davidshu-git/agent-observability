@@ -7,7 +7,7 @@ All responses are based on the unified schema; no source-specific fields leak he
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -195,6 +195,39 @@ async def tokens_overview(
         "cache_read_tokens": row.cache_read_tokens or 0,
         "calls": row.calls,
     }
+
+
+@router.get("/stats/tokens/daily")
+async def tokens_daily(
+    project_id: Optional[str] = Query(None),
+    days: int = Query(14),
+    db: AsyncSession = Depends(get_db),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    day_col = func.date(Event.timestamp).label("date")
+    q = (
+        select(
+            day_col,
+            func.sum(Event.payload_json["input_tokens"].as_integer()).label("input_tokens"),
+            func.sum(Event.payload_json["output_tokens"].as_integer()).label("output_tokens"),
+            func.count().label("calls"),
+        )
+        .where(Event.event_type == "model_call", Event.timestamp >= since)
+        .group_by(func.date(Event.timestamp))
+        .order_by(func.date(Event.timestamp).desc())
+    )
+    if project_id:
+        q = q.where(Event.project_id == project_id)
+    result = await db.execute(q)
+    return [
+        {
+            "date": str(r.date),
+            "input_tokens": r.input_tokens or 0,
+            "output_tokens": r.output_tokens or 0,
+            "calls": r.calls,
+        }
+        for r in result.all()
+    ]
 
 
 # ---------------------------------------------------------------------------

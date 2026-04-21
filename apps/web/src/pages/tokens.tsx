@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type TokenOverview } from "@/lib/api";
+import { api, type TokenOverview, type TokenDailyStat } from "@/lib/api";
 import type { Project } from "@/types/events";
 
 function fmt(n: number) {
@@ -21,6 +21,8 @@ export default function TokensPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>("");
   const [overview, setOverview] = useState<TokenOverview | null>(null);
+  const [daily, setDaily] = useState<TokenDailyStat[]>([]);
+  const [days, setDays] = useState(14);
   const [err, setErr] = useState("");
 
   useEffect(() => {
@@ -33,7 +35,8 @@ export default function TokensPage() {
   useEffect(() => {
     if (!selectedProject) return;
     api.tokensOverview(selectedProject).then(setOverview).catch((e) => setErr(String(e)));
-  }, [selectedProject]);
+    api.tokensDaily(selectedProject, days).then(setDaily).catch((e) => setErr(String(e)));
+  }, [selectedProject, days]);
 
   const total = overview ? overview.input_tokens + overview.output_tokens : 0;
 
@@ -90,6 +93,26 @@ export default function TokensPage() {
       {!overview && !err && (
         <p style={{ color: "var(--text-dim)" }}>暂无 Token 数据，请先同步日志。</p>
       )}
+
+      {/* daily chart */}
+      <div style={{ marginTop: "2rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
+          <span style={{ color: "var(--text-muted)", fontSize: 13, fontWeight: 600 }}>每日用量</span>
+          {([7, 14, 30] as const).map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={`tag-btn${days === d ? " active" : ""}`}
+              style={{ fontSize: 11 }}
+            >
+              {d}天
+            </button>
+          ))}
+        </div>
+        {daily.length > 0 ? <DailyChart data={daily} /> : (
+          <p style={{ color: "var(--text-dim)", fontSize: 12 }}>暂无每日数据</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -104,6 +127,88 @@ function TokenRow({ label, value, raw, max, color }: {
         <span style={{ color, fontWeight: 700, fontSize: 13, fontFamily: "var(--font-mono)" }}>{value}</span>
       </div>
       <Bar value={raw} max={max} color={color} />
+    </div>
+  );
+}
+
+function DailyChart({ data }: { data: TokenDailyStat[] }) {
+  const sorted = [...data].sort((a, b) => a.date.localeCompare(b.date));
+  const W = 640, H = 180, PAD_L = 52, PAD_B = 28, PAD_T = 12, PAD_R = 12;
+  const chartW = W - PAD_L - PAD_R;
+  const chartH = H - PAD_T - PAD_B;
+
+  const maxVal = Math.max(...sorted.map((d) => d.input_tokens + d.output_tokens), 1);
+  const barW = Math.max(4, Math.floor(chartW / sorted.length) - 3);
+  const step = chartW / sorted.length;
+
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(maxVal * f));
+
+  const [hovered, setHovered] = useState<number | null>(null);
+
+  return (
+    <div className="card" style={{ padding: "1rem", overflowX: "auto" }}>
+      {/* legend */}
+      <div style={{ display: "flex", gap: "1rem", marginBottom: "0.75rem" }}>
+        {[["输入", "var(--blue)"], ["输出", "var(--green)"]].map(([label, color]) => (
+          <span key={label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-muted)" }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: color, display: "inline-block" }} />
+            {label}
+          </span>
+        ))}
+      </div>
+
+      <svg width={W} height={H} style={{ display: "block", overflow: "visible" }}>
+        {/* y grid + labels */}
+        {yTicks.map((v) => {
+          const y = PAD_T + chartH - (v / maxVal) * chartH;
+          return (
+            <g key={v}>
+              <line x1={PAD_L} x2={PAD_L + chartW} y1={y} y2={y} stroke="var(--border)" strokeWidth={0.5} />
+              <text x={PAD_L - 6} y={y + 4} textAnchor="end" fontSize={9} fill="var(--text-dim)">{fmt(v)}</text>
+            </g>
+          );
+        })}
+
+        {/* bars */}
+        {sorted.map((d, i) => {
+          const x = PAD_L + i * step + (step - barW) / 2;
+          const inH = (d.input_tokens / maxVal) * chartH;
+          const outH = (d.output_tokens / maxVal) * chartH;
+          const total = d.input_tokens + d.output_tokens;
+          const isHov = hovered === i;
+          return (
+            <g key={d.date}
+              onMouseEnter={() => setHovered(i)}
+              onMouseLeave={() => setHovered(null)}
+              style={{ cursor: "default" }}
+            >
+              {/* input bar (bottom) */}
+              <rect x={x} y={PAD_T + chartH - inH} width={barW} height={inH}
+                fill="var(--blue)" opacity={isHov ? 1 : 0.75} rx={1} />
+              {/* output bar (stacked) */}
+              <rect x={x} y={PAD_T + chartH - inH - outH} width={barW} height={outH}
+                fill="var(--green)" opacity={isHov ? 1 : 0.75} rx={1} />
+              {/* x label */}
+              <text x={x + barW / 2} y={H - 6} textAnchor="middle" fontSize={9} fill="var(--text-dim)">
+                {d.date.slice(5)}
+              </text>
+              {/* tooltip */}
+              {isHov && (
+                <g>
+                  <rect x={x + barW / 2 - 44} y={PAD_T} width={88} height={44}
+                    fill="var(--surface)" stroke="var(--border)" strokeWidth={1} rx={4} />
+                  <text x={x + barW / 2} y={PAD_T + 13} textAnchor="middle" fontSize={9} fill="var(--text)" fontWeight={600}>{d.date}</text>
+                  <text x={x + barW / 2} y={PAD_T + 25} textAnchor="middle" fontSize={9} fill="var(--text-muted)">合计 {fmt(total)}</text>
+                  <text x={x + barW / 2} y={PAD_T + 37} textAnchor="middle" fontSize={9} fill="var(--text-dim)">{d.calls} 次调用</text>
+                </g>
+              )}
+            </g>
+          );
+        })}
+
+        {/* y axis */}
+        <line x1={PAD_L} x2={PAD_L} y1={PAD_T} y2={PAD_T + chartH} stroke="var(--border)" strokeWidth={1} />
+      </svg>
     </div>
   );
 }
