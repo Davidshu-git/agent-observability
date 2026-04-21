@@ -118,7 +118,7 @@ async def session_timeline(session_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(Event)
         .where(Event.session_id == session_id)
-        .order_by(Event.timestamp, Event.id)
+        .order_by(Event.timestamp.desc(), Event.id.desc())
     )
     events = result.scalars().all()
     return [
