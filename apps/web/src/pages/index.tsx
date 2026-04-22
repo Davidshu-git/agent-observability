@@ -62,16 +62,52 @@ export default function OverviewPage() {
   }
 
   const totalSessions = rows.reduce((s, r) => s + r.total_sessions, 0);
-  const totalTokens = rows.reduce((s, r) => s + r.total_input_tokens + r.total_output_tokens, 0);
+  const totalInput   = rows.reduce((s, r) => s + r.total_input_tokens, 0);
+  const totalOutput  = rows.reduce((s, r) => s + r.total_output_tokens, 0);
+  const totalTokens  = totalInput + totalOutput;
+  const inPct  = totalTokens > 0 ? Math.round(totalInput  / totalTokens * 100) : 0;
+  const outPct = 100 - inPct;
 
   return (
     <div>
-      <div style={{ marginBottom: "2rem" }}>
+      <div style={{ marginBottom: "1.5rem" }}>
         <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>全局总览</h1>
         <p style={{ color: "var(--text-muted)", fontSize: 12 }}>
-          {rows.length} 个项目 · {totalSessions.toLocaleString()} 次会话 · {fmt(totalTokens)} tokens
+          {rows.length} 个项目 · {totalSessions.toLocaleString()} 次会话
         </p>
       </div>
+
+      {/* Token summary banner */}
+      {!loading && totalTokens > 0 && (
+        <div className="card" style={{ marginBottom: "1.5rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            <span style={{ color: "var(--text-muted)", fontSize: 12, fontWeight: 600 }}>Token 消耗总览</span>
+            <span style={{ color: "var(--text)", fontWeight: 700, fontSize: 18, fontVariantNumeric: "tabular-nums" }}>
+              {fmt(totalTokens)}
+              <span style={{ color: "var(--text-dim)", fontWeight: 400, fontSize: 12, marginLeft: 4 }}>tokens</span>
+            </span>
+          </div>
+          <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", background: "var(--border)" }}>
+            <div style={{ width: `${inPct}%`, background: "var(--blue)", transition: "width 0.5s var(--ease)" }} />
+            <div style={{ flex: 1, background: "var(--green)" }} />
+          </div>
+          <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12 }}>
+              <span style={{ color: "var(--blue)", marginRight: 4 }}>▪</span>
+              <span style={{ color: "var(--text-muted)" }}>输入 </span>
+              <span style={{ color: "var(--text)", fontWeight: 600 }}>{fmt(totalInput)}</span>
+              <span style={{ color: "var(--text-dim)", fontSize: 11, marginLeft: 4 }}>{inPct}%</span>
+            </span>
+            <span style={{ fontSize: 12 }}>
+              <span style={{ color: "var(--green)", marginRight: 4 }}>▪</span>
+              <span style={{ color: "var(--text-muted)" }}>输出 </span>
+              <span style={{ color: "var(--text)", fontWeight: 600 }}>{fmt(totalOutput)}</span>
+              <span style={{ color: "var(--text-dim)", fontSize: 11, marginLeft: 4 }}>{outPct}%</span>
+            </span>
+          </div>
+        </div>
+      )}
+
 
       {err && (
         <div style={{
