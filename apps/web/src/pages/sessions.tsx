@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { marked } from "marked";
+import DOMPurify from "isomorphic-dompurify";
 import { api } from "@/lib/api";
 import type { SessionSummary, NormalizedEvent } from "@/types/events";
 import CopyableId from "@/components/CopyableId";
@@ -47,7 +48,7 @@ function fmtDate(s: string | null | undefined) {
   return new Date(s).toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" });
 }
 function parseMd(text: string): string {
-  return marked.parse(text) as string;
+  return DOMPurify.sanitize(marked.parse(text) as string);
 }
 
 // ── event detail ──────────────────────────────────────────────────────────────
@@ -334,28 +335,63 @@ export default function SessionsPage() {
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [err, setErr] = useState("");
 
+  // Stable ref so SSE/polling closures always see the current selectedId
+  const selectedIdRef = useRef(selectedId);
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+
   useEffect(() => { setAgentFilter("all"); }, [projectId]);
 
-  const fetchSessions = () => {
+  const fetchSessions = useCallback(() => {
     if (!router.isReady) return;
     setLoadingSessions(true);
     api.sessions({ project_id: projectId || undefined, limit: 100 })
       .then(setSessions)
       .catch((e) => setErr(String(e)))
       .finally(() => setLoadingSessions(false));
-  };
-
-  useEffect(fetchSessions, [router.isReady, projectId]);
-
-  // SSE 订阅：有新 ingest 时自动刷新会话列表
-  useEffect(() => {
-    const es = new EventSource("/api/stream");
-    es.onmessage = (e) => {
-      if (e.data === "ingest") fetchSessions();
-    };
-    return () => es.close();
   }, [router.isReady, projectId]);
 
+  // Silent timeline refresh — no loading spinner, used by SSE/polling
+  const refreshTimelineSilent = useCallback((id: string) => {
+    if (!id) return;
+    api.timeline(id).then(setEvents).catch(() => {});
+  }, []);
+
+  useEffect(fetchSessions, [fetchSessions]);
+
+  // SSE + fallback polling
+  useEffect(() => {
+    if (!router.isReady) return;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const es = new EventSource("/api/stream");
+
+    es.onopen = () => {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    };
+
+    es.onmessage = (e) => {
+      if (e.data === "ingest") {
+        fetchSessions();
+        refreshTimelineSilent(selectedIdRef.current);
+      }
+    };
+
+    // SSE disconnected — fall back to low-frequency polling of current timeline
+    es.onerror = () => {
+      if (!pollTimer) {
+        pollTimer = setInterval(() => {
+          refreshTimelineSilent(selectedIdRef.current);
+        }, 8000);
+      }
+    };
+
+    return () => {
+      es.close();
+      if (pollTimer) clearInterval(pollTimer);
+    };
+  }, [router.isReady, projectId, fetchSessions, refreshTimelineSilent]);
+
+  // Load timeline with loading indicator when user navigates to a session
   useEffect(() => {
     if (!selectedId) return;
     setLoadingEvents(true);

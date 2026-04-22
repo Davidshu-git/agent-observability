@@ -45,7 +45,16 @@ class _JsonlHandler(FileSystemEventHandler):
         with self._lock:
             self._timers.pop(path, None)
         log.info("watcher: change detected → %s", path)
-        asyncio.run_coroutine_threadsafe(self._ingest_fn(), self._loop)
+        future = asyncio.run_coroutine_threadsafe(self._ingest_fn(), self._loop)
+
+        def _done(fut):
+            try:
+                result = fut.result()
+                log.info("watcher: ingest complete for %s: %s", path, result)
+            except Exception:
+                log.exception("watcher: ingest failed for %s", path)
+
+        future.add_done_callback(_done)
 
     def on_modified(self, event: FileSystemEvent) -> None:
         if not event.is_directory and str(event.src_path).endswith(".jsonl"):

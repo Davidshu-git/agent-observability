@@ -109,7 +109,17 @@ async def list_sessions(
     offset: int = Query(0),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(Session).order_by(Session.started_at.desc())
+    # Sort by most recent event timestamp (last-active semantics).
+    # Uses a correlated subquery on events(session_id, timestamp) index — no migration needed.
+    # If sessions table grows large (>10k), consider adding a last_event_at column instead.
+    from sqlalchemy import func, select as sa_select, nulls_last
+    last_event_subq = (
+        sa_select(func.max(Event.timestamp))
+        .where(Event.session_id == Session.id)
+        .correlate(Session)
+        .scalar_subquery()
+    )
+    q = select(Session).order_by(nulls_last(last_event_subq.desc()))
     if project_id:
         q = q.where(Session.project_id == project_id)
     if agent_id:
