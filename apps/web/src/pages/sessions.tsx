@@ -363,7 +363,11 @@ export default function SessionsPage() {
     if (!router.isReady) return;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-    const es = new EventSource("/api/stream");
+    // Connect directly to the API to avoid Next.js dev-server proxy buffering SSE streams
+    const apiOrigin = typeof window !== "undefined"
+      ? `${window.location.protocol}//${window.location.hostname}:8000`
+      : "http://localhost:8000";
+    const es = new EventSource(`${apiOrigin}/api/stream`);
 
     es.onopen = () => {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
