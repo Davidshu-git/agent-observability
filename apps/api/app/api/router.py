@@ -230,6 +230,45 @@ async def tokens_daily(
     ]
 
 
+@router.get("/stats/tokens/by-model")
+async def tokens_by_model(
+    project_id: Optional[str] = Query(None),
+    since: Optional[datetime] = Query(None),
+    until: Optional[datetime] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    model_col = Event.payload_json["model"].as_string().label("model")
+    q = (
+        select(
+            model_col,
+            func.sum(Event.payload_json["input_tokens"].as_integer()).label("input_tokens"),
+            func.sum(Event.payload_json["output_tokens"].as_integer()).label("output_tokens"),
+            func.sum(Event.payload_json["cache_read_tokens"].as_integer()).label("cache_read_tokens"),
+            func.count().label("calls"),
+        )
+        .where(Event.event_type == "model_call")
+        .group_by(model_col)
+        .order_by(func.sum(Event.payload_json["input_tokens"].as_integer() + Event.payload_json["output_tokens"].as_integer()).desc())
+    )
+    if project_id:
+        q = q.where(Event.project_id == project_id)
+    if since:
+        q = q.where(Event.timestamp >= since)
+    if until:
+        q = q.where(Event.timestamp <= until)
+    result = await db.execute(q)
+    return [
+        {
+            "model": r.model or "unknown",
+            "input_tokens": r.input_tokens or 0,
+            "output_tokens": r.output_tokens or 0,
+            "cache_read_tokens": r.cache_read_tokens or 0,
+            "calls": r.calls,
+        }
+        for r in result.all()
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Stats — tools
 # ---------------------------------------------------------------------------

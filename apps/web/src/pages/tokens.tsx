@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type TokenOverview, type TokenDailyStat } from "@/lib/api";
+import { api, type TokenOverview, type TokenDailyStat, type TokenByModel } from "@/lib/api";
 import type { Project } from "@/types/events";
 
 function fmt(n: number) {
@@ -22,6 +22,7 @@ export default function TokensPage() {
   const [selectedProject, setSelectedProject] = useState<string>("");
   const [overview, setOverview] = useState<TokenOverview | null>(null);
   const [daily, setDaily] = useState<TokenDailyStat[]>([]);
+  const [byModel, setByModel] = useState<TokenByModel[]>([]);
   const [days, setDays] = useState(14);
   const [err, setErr] = useState("");
 
@@ -36,6 +37,7 @@ export default function TokensPage() {
     if (!selectedProject) return;
     api.tokensOverview(selectedProject).then(setOverview).catch((e) => setErr(String(e)));
     api.tokensDaily(selectedProject, days).then(setDaily).catch((e) => setErr(String(e)));
+    api.tokensByModel(selectedProject).then(setByModel).catch((e) => setErr(String(e)));
   }, [selectedProject, days]);
 
   const total = overview ? overview.input_tokens + overview.output_tokens : 0;
@@ -92,6 +94,48 @@ export default function TokensPage() {
 
       {!overview && !err && (
         <p style={{ color: "var(--text-dim)" }}>暂无 Token 数据，请先同步日志。</p>
+      )}
+
+      {/* by-model table */}
+      {byModel.length > 0 && (
+        <div style={{ marginTop: "2rem" }}>
+          <div style={{ color: "var(--text-muted)", fontSize: 13, fontWeight: 600, marginBottom: "0.75rem" }}>按模型分布</div>
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                  {["模型", "调用次数", "输入", "输出", "合计"].map((h) => (
+                    <th key={h} style={{ padding: "8px 12px", textAlign: h === "模型" ? "left" : "right", color: "var(--text-muted)", fontWeight: 600 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {byModel.map((m, i) => {
+                  const total = m.input_tokens + m.output_tokens;
+                  const grandTotal = byModel.reduce((s, x) => s + x.input_tokens + x.output_tokens, 0);
+                  const pct = grandTotal > 0 ? Math.round((total / grandTotal) * 100) : 0;
+                  return (
+                    <tr key={m.model} style={{ borderBottom: i < byModel.length - 1 ? "1px solid var(--border)" : undefined }}>
+                      <td style={{ padding: "8px 12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>{m.model}</span>
+                          <span style={{ fontSize: 10, color: "var(--text-dim)", background: "var(--surface-alt)", padding: "1px 5px", borderRadius: 3 }}>{pct}%</span>
+                        </div>
+                        <div style={{ marginTop: 4, height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
+                          <div style={{ width: `${pct}%`, height: "100%", background: "var(--blue)", borderRadius: 2 }} />
+                        </div>
+                      </td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--amber)", fontVariantNumeric: "tabular-nums" }}>{m.calls.toLocaleString()}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--blue)", fontFamily: "var(--font-mono)" }}>{fmt(m.input_tokens)}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--green)", fontFamily: "var(--font-mono)" }}>{fmt(m.output_tokens)}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--text)", fontWeight: 600, fontFamily: "var(--font-mono)" }}>{fmt(total)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {/* daily chart */}

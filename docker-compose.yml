@@ -31,6 +31,7 @@ services:
       OMNIBOT_STOCK_LOG_DIR: /logs/omnibot/stock/sessions
       OMNIBOT_EHS_LOG_DIR: /logs/omnibot/ehs/sessions
     volumes:
+      - ./apps/api:/app
       - ${MHXY_HOST_LOG_DIR:-/volume1/server/.openclaw/workspace/projects/mhxy/logs/sessions}:/logs/mhxy/sessions:ro
       - ${OMNIBOT_STOCK_HOST_LOG_DIR:-/volume1/server/.openclaw/workspace/projects/omnibot/data/stock/observability/sessions}:/logs/omnibot/stock/sessions:ro
       - ${OMNIBOT_EHS_HOST_LOG_DIR:-/volume1/server/.openclaw/workspace/projects/omnibot/data/ehs/observability/sessions}:/logs/omnibot/ehs/sessions:ro
@@ -41,12 +42,15 @@ services:
   web:
     build:
       context: ./apps/web
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     restart: unless-stopped
     ports:
       - "3100:3000"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
     depends_on:
       - api
 

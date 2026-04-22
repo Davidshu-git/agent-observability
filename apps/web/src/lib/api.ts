@@ -50,6 +50,14 @@ export interface TokenDailyStat {
   calls: number;
 }
 
+export interface TokenByModel {
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  calls: number;
+}
+
 export interface ToolStat {
   tool_name: string;
   calls: number;
@@ -76,6 +84,8 @@ export const api = {
     get<TokenOverview>("/api/stats/tokens/overview", project_id ? { project_id } : undefined),
   tokensDaily: (project_id?: string, days = 14) =>
     get<TokenDailyStat[]>("/api/stats/tokens/daily", { ...(project_id ? { project_id } : {}), days }),
+  tokensByModel: (project_id?: string) =>
+    get<TokenByModel[]>("/api/stats/tokens/by-model", project_id ? { project_id } : undefined),
   tools: (project_id?: string) =>
     get<ToolStat[]>("/api/stats/tools", project_id ? { project_id } : undefined),
   think: (params: { project_id?: string; session_id?: string; limit?: number }) =>
