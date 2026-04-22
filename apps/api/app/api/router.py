@@ -6,11 +6,13 @@ All responses are based on the unified schema; no source-specific fields leak he
 
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, distinct, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +20,43 @@ from app.db.base import get_db, AsyncSessionLocal
 from app.db.models import Agent, DataSource, Event, Project, Session
 
 router = APIRouter(prefix="/api")
+
+# SSE 订阅者队列
+_sse_subscribers: list[asyncio.Queue] = []
+
+
+def _broadcast_ingest():
+    """ingest 完成后广播通知所有 SSE 订阅者。"""
+    for q in _sse_subscribers:
+        try:
+            q.put_nowait("ingest")
+        except asyncio.QueueFull:
+            pass
+
+
+@router.get("/stream")
+async def sse_stream():
+    """SSE 端点：日志有更新时推送 ingest 事件，前端订阅后自动刷新。"""
+    q: asyncio.Queue = asyncio.Queue(maxsize=10)
+    _sse_subscribers.append(q)
+
+    async def event_generator():
+        try:
+            yield "data: connected\n\n"
+            while True:
+                try:
+                    msg = await asyncio.wait_for(q.get(), timeout=25)
+                    yield f"data: {msg}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"  # 保活
+        finally:
+            _sse_subscribers.remove(q)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -447,12 +486,15 @@ async def run_jsonl_ingest(
             )
             await db.commit()
 
-    return {
+    result = {
         "sources_total": len(sources),
         "sources_scanned": sources_scanned,
         "sources_skipped": sources_skipped,
         **total,
     }
+    if total.get("events_inserted", 0) > 0:
+        _broadcast_ingest()
+    return result
 
 
 # ---------------------------------------------------------------------------

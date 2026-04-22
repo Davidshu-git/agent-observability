@@ -336,13 +336,24 @@ export default function SessionsPage() {
 
   useEffect(() => { setAgentFilter("all"); }, [projectId]);
 
-  useEffect(() => {
+  const fetchSessions = () => {
     if (!router.isReady) return;
     setLoadingSessions(true);
     api.sessions({ project_id: projectId || undefined, limit: 100 })
       .then(setSessions)
       .catch((e) => setErr(String(e)))
       .finally(() => setLoadingSessions(false));
+  };
+
+  useEffect(fetchSessions, [router.isReady, projectId]);
+
+  // SSE 订阅：有新 ingest 时自动刷新会话列表
+  useEffect(() => {
+    const es = new EventSource("/api/stream");
+    es.onmessage = (e) => {
+      if (e.data === "ingest") fetchSessions();
+    };
+    return () => es.close();
   }, [router.isReady, projectId]);
 
   useEffect(() => {
