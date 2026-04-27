@@ -9,6 +9,12 @@ function fmt(n: number) {
   return String(n);
 }
 
+function fmtCost(c: number) {
+  if (c < 0.001) return "< ¥0.001";
+  if (c < 1) return `¥${c.toFixed(3)}`;
+  return `¥${c.toFixed(2)}`;
+}
+
 function fmtTime(s: string | null) {
   if (!s) return "—";
   return new Date(s).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
@@ -67,6 +73,8 @@ export default function OverviewPage() {
   const totalTokens  = totalInput + totalOutput;
   const inPct  = totalTokens > 0 ? Math.round(totalInput  / totalTokens * 100) : 0;
   const outPct = 100 - inPct;
+  const totalCost = rows.reduce((s, r) => s + (r.total_cost ?? 0), 0);
+  const hasCost = rows.some((r) => r.total_cost !== null);
 
   return (
     <div>
@@ -91,7 +99,7 @@ export default function OverviewPage() {
             <div style={{ width: `${inPct}%`, background: "var(--blue)", transition: "width 0.5s var(--ease)" }} />
             <div style={{ flex: 1, background: "var(--green)" }} />
           </div>
-          <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ fontSize: 12 }}>
               <span style={{ color: "var(--blue)", marginRight: 4 }}>▪</span>
               <span style={{ color: "var(--text-muted)" }}>输入 </span>
@@ -104,6 +112,12 @@ export default function OverviewPage() {
               <span style={{ color: "var(--text)", fontWeight: 600 }}>{fmt(totalOutput)}</span>
               <span style={{ color: "var(--text-dim)", fontSize: 11, marginLeft: 4 }}>{outPct}%</span>
             </span>
+            {hasCost && (
+              <span style={{ fontSize: 12, marginLeft: "auto" }}>
+                <span style={{ color: "var(--text-muted)" }}>按量计费估算 </span>
+                <span style={{ color: "var(--amber)", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCost(totalCost)}</span>
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -227,9 +241,17 @@ function ProjectCard({
         display: "flex", alignItems: "center", justifyContent: "space-between",
         borderTop: "1px solid var(--border)", paddingTop: "0.75rem",
       }}>
-        <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
-          最近：{fmtTime(p.last_session_at)}
-        </span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
+            最近：{fmtTime(p.last_session_at)}
+          </span>
+          {p.total_cost !== null && (
+            <span style={{ fontSize: 11 }}>
+              <span style={{ color: "var(--text-dim)" }}>费用估算 </span>
+              <span style={{ color: "var(--amber)", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmtCost(p.total_cost)}</span>
+            </span>
+          )}
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {syncMsg && (
             <span style={{

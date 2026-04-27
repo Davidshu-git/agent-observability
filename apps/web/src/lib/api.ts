@@ -35,6 +35,7 @@ export interface ProjectOverview {
   last_session_at: string | null;
   total_input_tokens: number;
   total_output_tokens: number;
+  total_cost: number | null;
 }
 
 export interface TokenOverview {

@@ -701,6 +701,24 @@ async def stats_overview(db: AsyncSession = Depends(get_db)):
         )
         today_calls = today_calls_r.scalar() or 0
 
+        # per-model token breakdown for cost calculation
+        model_col = Event.payload_json["model"].as_string().label("model")
+        cost_r = await db.execute(
+            select(
+                model_col,
+                func.sum(Event.payload_json["input_tokens"].as_integer()).label("inp"),
+                func.sum(Event.payload_json["output_tokens"].as_integer()).label("out"),
+                func.sum(Event.payload_json["cache_read_tokens"].as_integer()).label("cache"),
+            )
+            .where(Event.project_id == p.id, Event.event_type == "model_call")
+            .group_by(model_col)
+        )
+        total_cost: float | None = None
+        for cr in cost_r.all():
+            c = _calc_cost(cr.model or "", cr.inp or 0, cr.cache or 0, cr.out or 0)
+            if c is not None:
+                total_cost = (total_cost or 0.0) + c
+
         output.append({
             "project_id": p.id,
             "display_name": p.display_name,
@@ -710,6 +728,7 @@ async def stats_overview(db: AsyncSession = Depends(get_db)):
             "last_session_at": last_session_at,
             "total_input_tokens": tok[0] or 0,
             "total_output_tokens": tok[1] or 0,
+            "total_cost": total_cost,
         })
 
     return output
