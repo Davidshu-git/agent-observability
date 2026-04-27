@@ -8,3 +8,4 @@ node_modules/
 .DS_Store
 postgres_data/
 apps/web/next-env.d.ts
+apps/web/tsconfig.tsbuildinfo

@@ -28,10 +28,14 @@ from __future__ import annotations
 import glob as glob_module
 import hashlib
 import json
+import logging
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from app.adapters.common import now as _now, parse_ts as _parse_ts
+
+log = logging.getLogger(__name__)
 
 from app.schemas.events import (
     EventType,
@@ -46,10 +50,6 @@ AGENT_ID = "game-bot"
 SOURCE = "mhxy_jsonl"
 
 
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 def _content_key(session_id: str, record: dict) -> str:
     """
     Stable, content-addressed key for a log record.
@@ -61,15 +61,6 @@ def _content_key(session_id: str, record: dict) -> str:
         json.dumps(record, sort_keys=True, ensure_ascii=False).encode()
     ).hexdigest()[:20]
     return f"mhxy:{session_id}:{digest}"
-
-
-def _parse_ts(ts_str: str | None) -> datetime:
-    if not ts_str:
-        return _now()
-    try:
-        return datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-    except Exception:
-        return _now()
 
 
 class MhxyJsonlAdapter:
@@ -115,6 +106,7 @@ class MhxyJsonlAdapter:
                 try:
                     record = json.loads(line)
                 except json.JSONDecodeError:
+                    log.warning("skip malformed line in %s at line %d: %r", path, lineno, line[:120])
                     continue
 
                 external_key = _content_key(session_id, record)

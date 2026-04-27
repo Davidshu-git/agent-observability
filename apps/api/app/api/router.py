@@ -85,7 +85,10 @@ async def sse_stream():
                 except asyncio.TimeoutError:
                     yield ": ping\n\n"  # 保活
         finally:
-            _sse_subscribers.remove(q)
+            try:
+                _sse_subscribers.remove(q)
+            except ValueError:
+                pass
 
     return StreamingResponse(
         event_generator(),
@@ -198,11 +201,18 @@ async def get_session(session_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/sessions/{session_id}/timeline")
-async def session_timeline(session_id: str, db: AsyncSession = Depends(get_db)):
+async def session_timeline(
+    session_id: str,
+    limit: int = Query(200, le=500),
+    offset: int = Query(0),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(
         select(Event)
         .where(Event.session_id == session_id)
         .order_by(Event.timestamp.desc(), Event.id.desc())
+        .limit(limit)
+        .offset(offset)
     )
     events = result.scalars().all()
     return [
@@ -367,25 +377,16 @@ async def tools_stats(
     project_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    from sqlalchemy import text
+    tool_col = Event.payload_json["tool_name"].as_string().label("tool_name")
+    q = (
+        select(tool_col, func.count().label("calls"))
+        .where(Event.event_type == "tool_call")
+        .group_by(tool_col)
+        .order_by(func.count().desc())
+    )
     if project_id:
-        sql = text("""
-            SELECT payload_json->>'tool_name' AS tool_name, count(*) AS calls
-            FROM events
-            WHERE event_type = 'tool_call' AND project_id = :project_id
-            GROUP BY payload_json->>'tool_name'
-            ORDER BY calls DESC
-        """)
-        result = await db.execute(sql, {"project_id": project_id})
-    else:
-        sql = text("""
-            SELECT payload_json->>'tool_name' AS tool_name, count(*) AS calls
-            FROM events
-            WHERE event_type = 'tool_call'
-            GROUP BY payload_json->>'tool_name'
-            ORDER BY calls DESC
-        """)
-        result = await db.execute(sql)
+        q = q.where(Event.project_id == project_id)
+    result = await db.execute(q)
     return [{"tool_name": r.tool_name, "calls": r.calls} for r in result.all()]
 
 
@@ -651,84 +652,82 @@ async def stats_overview(db: AsyncSession = Depends(get_db)):
 
     projects_result = await db.execute(select(Project).where(Project.is_active == True))
     projects = projects_result.scalars().all()
+    if not projects:
+        return []
+
+    project_ids = [p.id for p in projects]
+
+    # Batch 1: session counts + last_session per project
+    session_agg_r = await db.execute(
+        select(
+            Session.project_id,
+            func.count().label("total_sessions"),
+            func.count().filter(
+                Session.started_at >= today_start_utc,
+                Session.started_at < today_end_utc,
+            ).label("today_sessions"),
+            func.max(Session.started_at).label("last_session_at"),
+        )
+        .where(Session.project_id.in_(project_ids))
+        .group_by(Session.project_id)
+    )
+    session_stats = {r.project_id: r for r in session_agg_r.all()}
+
+    # Batch 2: token totals + today_calls per project
+    event_agg_r = await db.execute(
+        select(
+            Event.project_id,
+            func.sum(Event.payload_json["input_tokens"].as_integer()).label("input_tokens"),
+            func.sum(Event.payload_json["output_tokens"].as_integer()).label("output_tokens"),
+            func.count().filter(
+                Event.timestamp >= today_start_utc,
+                Event.timestamp < today_end_utc,
+            ).label("today_calls"),
+        )
+        .where(
+            Event.event_type == "model_call",
+            Event.project_id.in_(project_ids),
+        )
+        .group_by(Event.project_id)
+    )
+    event_stats = {r.project_id: r for r in event_agg_r.all()}
+
+    # Batch 3: per-model cost breakdown per project
+    model_col = Event.payload_json["model"].as_string().label("model")
+    cost_agg_r = await db.execute(
+        select(
+            Event.project_id,
+            model_col,
+            func.sum(Event.payload_json["input_tokens"].as_integer()).label("inp"),
+            func.sum(Event.payload_json["output_tokens"].as_integer()).label("out"),
+            func.sum(Event.payload_json["cache_read_tokens"].as_integer()).label("cache"),
+        )
+        .where(
+            Event.event_type == "model_call",
+            Event.project_id.in_(project_ids),
+        )
+        .group_by(Event.project_id, model_col)
+    )
+    cost_by_project: dict[str, float] = {}
+    for r in cost_agg_r.all():
+        c = _calc_cost(r.model or "", r.inp or 0, r.cache or 0, r.out or 0)
+        if c is not None:
+            cost_by_project[r.project_id] = (cost_by_project.get(r.project_id) or 0.0) + c
 
     output = []
     for p in projects:
-        # total sessions
-        total_sessions_r = await db.execute(
-            select(func.count()).select_from(Session).where(Session.project_id == p.id)
-        )
-        total_sessions = total_sessions_r.scalar() or 0
-
-        # today's sessions (CST timezone)
-        today_sessions_r = await db.execute(
-            select(func.count()).select_from(Session).where(
-                Session.project_id == p.id,
-                Session.started_at >= today_start_utc,
-                Session.started_at < today_end_utc,
-            )
-        )
-        today_sessions = today_sessions_r.scalar() or 0
-
-        # last session
-        last_session_r = await db.execute(
-            select(Session.started_at)
-            .where(Session.project_id == p.id)
-            .order_by(Session.started_at.desc())
-            .limit(1)
-        )
-        last_session_at = last_session_r.scalar()
-
-        # token totals + today's model calls
-        tokens_r = await db.execute(
-            select(
-                func.sum(Event.payload_json["input_tokens"].as_integer()),
-                func.sum(Event.payload_json["output_tokens"].as_integer()),
-            ).where(
-                Event.project_id == p.id,
-                Event.event_type == "model_call",
-            )
-        )
-        tok = tokens_r.one()
-
-        today_calls_r = await db.execute(
-            select(func.count()).select_from(Event).where(
-                Event.project_id == p.id,
-                Event.event_type == "model_call",
-                Event.timestamp >= today_start_utc,
-                Event.timestamp < today_end_utc,
-            )
-        )
-        today_calls = today_calls_r.scalar() or 0
-
-        # per-model token breakdown for cost calculation
-        model_col = Event.payload_json["model"].as_string().label("model")
-        cost_r = await db.execute(
-            select(
-                model_col,
-                func.sum(Event.payload_json["input_tokens"].as_integer()).label("inp"),
-                func.sum(Event.payload_json["output_tokens"].as_integer()).label("out"),
-                func.sum(Event.payload_json["cache_read_tokens"].as_integer()).label("cache"),
-            )
-            .where(Event.project_id == p.id, Event.event_type == "model_call")
-            .group_by(model_col)
-        )
-        total_cost: float | None = None
-        for cr in cost_r.all():
-            c = _calc_cost(cr.model or "", cr.inp or 0, cr.cache or 0, cr.out or 0)
-            if c is not None:
-                total_cost = (total_cost or 0.0) + c
-
+        ss = session_stats.get(p.id)
+        es = event_stats.get(p.id)
         output.append({
             "project_id": p.id,
             "display_name": p.display_name,
-            "total_sessions": total_sessions,
-            "today_sessions": today_sessions,
-            "today_calls": today_calls,
-            "last_session_at": last_session_at,
-            "total_input_tokens": tok[0] or 0,
-            "total_output_tokens": tok[1] or 0,
-            "total_cost": total_cost,
+            "total_sessions": ss.total_sessions if ss else 0,
+            "today_sessions": ss.today_sessions if ss else 0,
+            "today_calls": es.today_calls if es else 0,
+            "last_session_at": ss.last_session_at if ss else None,
+            "total_input_tokens": es.input_tokens or 0 if es else 0,
+            "total_output_tokens": es.output_tokens or 0 if es else 0,
+            "total_cost": cost_by_project.get(p.id),
         })
 
     return output

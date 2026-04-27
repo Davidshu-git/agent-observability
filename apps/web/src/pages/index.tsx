@@ -2,23 +2,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, type ProjectOverview } from "@/lib/api";
 import { SkeletonCard } from "@/components/Skeleton";
-
-function fmt(n: number) {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-
-function fmtCost(c: number) {
-  if (c < 0.001) return "< ¥0.001";
-  if (c < 1) return `¥${c.toFixed(3)}`;
-  return `¥${c.toFixed(2)}`;
-}
-
-function fmtTime(s: string | null) {
-  if (!s) return "—";
-  return new Date(s).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
-}
+import { fmt, fmtCost, fmtTime } from "@/lib/format";
 
 const SYNC_FN_MAP: Record<string, () => Promise<{ events_inserted: number }>> = {
   mhxy: api.ingestMhxy,

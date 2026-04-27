@@ -23,10 +23,14 @@ from __future__ import annotations
 import glob as glob_module
 import hashlib
 import json
+import logging
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from app.adapters.common import now as _now, parse_ts as _parse_ts
+
+log = logging.getLogger(__name__)
 
 from app.schemas.events import (
     EventType,
@@ -37,19 +41,6 @@ from app.schemas.events import (
 )
 
 SOURCE = "omnibot_jsonl"
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _parse_ts(ts_str: str | None) -> datetime:
-    if not ts_str:
-        return _now()
-    try:
-        return datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-    except Exception:
-        return _now()
 
 
 def _content_key(session_id: str, record: dict) -> str:
@@ -109,6 +100,7 @@ class OmnibotJsonlAdapter:
                 try:
                     record = json.loads(line)
                 except json.JSONDecodeError:
+                    log.warning("skip malformed line in %s: %r", path, line[:120])
                     continue
 
                 external_key = _content_key(session_id, record)

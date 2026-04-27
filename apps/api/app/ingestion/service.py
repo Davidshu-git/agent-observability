@@ -13,8 +13,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Sequence
+
+log = logging.getLogger(__name__)
 
 from sqlalchemy import func as sa_func, select, text as sa_text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -145,16 +148,22 @@ async def ingest_batch(
     raw_inserted = raw_updated = events_inserted = events_skipped = 0
 
     for blob in raw_blobs:
-        inserted, updated = await ingest_raw_blob(db, blob)
-        raw_inserted += inserted
-        raw_updated += updated
+        try:
+            inserted, updated = await ingest_raw_blob(db, blob)
+            raw_inserted += inserted
+            raw_updated += updated
+        except Exception as exc:
+            log.warning("ingest_raw_blob failed for key=%s: %s", blob.external_key, exc)
 
     for event in events:
-        ok = await ingest_event(db, event)
-        if ok:
-            events_inserted += 1
-        else:
-            events_skipped += 1
+        try:
+            ok = await ingest_event(db, event)
+            if ok:
+                events_inserted += 1
+            else:
+                events_skipped += 1
+        except Exception as exc:
+            log.warning("ingest_event failed for event_id=%s: %s", event.event_id, exc)
 
     await db.commit()
     return {
