@@ -180,7 +180,7 @@ export default function TokensPage() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  {["模型", "调用次数", "输入", "输出", "合计", "费用"].map((h) => (
+                  {["模型", "调用次数", "输入", "缓存命中", "输出", "合计", "费用"].map((h) => (
                     <th key={h} style={{ padding: "8px 12px", textAlign: h === "模型" ? "left" : "right", color: "var(--text-muted)", fontWeight: 600 }}>{h}</th>
                   ))}
                 </tr>
@@ -203,6 +203,18 @@ export default function TokensPage() {
                       </td>
                       <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--amber)", fontVariantNumeric: "tabular-nums" }}>{m.calls.toLocaleString()}</td>
                       <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--blue)", fontFamily: "var(--font-mono)" }}>{fmt(m.input_tokens)}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right" }}>
+                        {m.cache_read_tokens > 0 ? (
+                          <span style={{ fontFamily: "var(--font-mono)" }}>
+                            <span style={{ color: "var(--text)" }}>{fmt(m.cache_read_tokens)}</span>
+                            <span style={{ color: "var(--text-dim)", fontSize: 10, marginLeft: 4 }}>
+                              {Math.round(m.cache_read_tokens / m.input_tokens * 100)}%
+                            </span>
+                          </span>
+                        ) : (
+                          <span style={{ color: "var(--text-dim)" }}>—</span>
+                        )}
+                      </td>
                       <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--green)", fontFamily: "var(--font-mono)" }}>{fmt(m.output_tokens)}</td>
                       <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--text)", fontWeight: 600, fontFamily: "var(--font-mono)" }}>{fmt(total)}</td>
                       <td style={{ padding: "8px 12px", textAlign: "right" }}>
