@@ -31,6 +31,7 @@ export interface ProjectOverview {
   display_name: string;
   total_sessions: number;
   today_sessions: number;
+  today_calls: number;
   last_session_at: string | null;
   total_input_tokens: number;
   total_output_tokens: number;

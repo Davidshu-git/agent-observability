@@ -639,7 +639,7 @@ async def stats_overview(db: AsyncSession = Depends(get_db)):
         )
         last_session_at = last_session_r.scalar()
 
-        # token totals
+        # token totals + today's model calls
         tokens_r = await db.execute(
             select(
                 func.sum(Event.payload_json["input_tokens"].as_integer()),
@@ -651,11 +651,22 @@ async def stats_overview(db: AsyncSession = Depends(get_db)):
         )
         tok = tokens_r.one()
 
+        today_calls_r = await db.execute(
+            select(func.count()).select_from(Event).where(
+                Event.project_id == p.id,
+                Event.event_type == "model_call",
+                Event.timestamp >= today_start_utc,
+                Event.timestamp < today_end_utc,
+            )
+        )
+        today_calls = today_calls_r.scalar() or 0
+
         output.append({
             "project_id": p.id,
             "display_name": p.display_name,
             "total_sessions": total_sessions,
             "today_sessions": today_sessions,
+            "today_calls": today_calls,
             "last_session_at": last_session_at,
             "total_input_tokens": tok[0] or 0,
             "total_output_tokens": tok[1] or 0,

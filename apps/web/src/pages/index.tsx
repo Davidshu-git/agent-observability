@@ -185,7 +185,7 @@ function ProjectCard({
       {/* stats */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "1rem" }}>
         <Stat label="总会话" value={String(p.total_sessions)} />
-        <Stat label="今日会话" value={String(p.today_sessions)} accent={p.today_sessions > 0} />
+        <Stat label="今日调用" value={String(p.today_calls)} accent={p.today_calls > 0} />
         <Stat label="输入 Token" value={fmt(p.total_input_tokens)} />
         <Stat label="输出 Token" value={fmt(p.total_output_tokens)} />
       </div>
