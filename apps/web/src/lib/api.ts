@@ -57,6 +57,7 @@ export interface TokenByModel {
   output_tokens: number;
   cache_read_tokens: number;
   calls: number;
+  cost: number | null;
 }
 
 export interface ToolStat {

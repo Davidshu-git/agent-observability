@@ -21,6 +21,41 @@ from app.db.models import Agent, DataSource, Event, Project, Session
 
 router = APIRouter(prefix="/api")
 
+# ---------------------------------------------------------------------------
+# Pay-per-use model cost config (元 / 百万 tokens)
+# ---------------------------------------------------------------------------
+
+_COST_CONFIG: dict[str, dict[str, float]] = {
+    "deepseek-v4-flash": {
+        "input_per_m":     1.0,
+        "cache_hit_per_m": 0.02,
+        "output_per_m":    2.0,
+    },
+    "qwen3-vl-plus": {
+        "input_per_m":     1.0,
+        "cache_hit_per_m": 0.0,
+        "output_per_m":    10.0,
+    },
+}
+
+
+def _calc_cost(
+    model: str,
+    input_tokens: int,
+    cache_read_tokens: int,
+    output_tokens: int,
+) -> float | None:
+    cfg = _COST_CONFIG.get(model)
+    if cfg is None:
+        return None
+    non_cached = max(0, input_tokens - cache_read_tokens)
+    return (
+        non_cached          * cfg["input_per_m"]     / 1_000_000
+        + cache_read_tokens * cfg["cache_hit_per_m"] / 1_000_000
+        + output_tokens     * cfg["output_per_m"]    / 1_000_000
+    )
+
+
 # SSE 订阅者队列
 _sse_subscribers: list[asyncio.Queue] = []
 
@@ -306,16 +341,21 @@ async def tokens_by_model(
     if until:
         q = q.where(Event.timestamp <= until)
     result = await db.execute(q)
-    return [
-        {
-            "model": r.model or "unknown",
-            "input_tokens": r.input_tokens or 0,
-            "output_tokens": r.output_tokens or 0,
-            "cache_read_tokens": r.cache_read_tokens or 0,
+    rows = []
+    for r in result.all():
+        model = r.model or "unknown"
+        inp = r.input_tokens or 0
+        out = r.output_tokens or 0
+        cache = r.cache_read_tokens or 0
+        rows.append({
+            "model": model,
+            "input_tokens": inp,
+            "output_tokens": out,
+            "cache_read_tokens": cache,
             "calls": r.calls,
-        }
-        for r in result.all()
-    ]
+            "cost": _calc_cost(model, inp, cache, out),
+        })
+    return rows
 
 
 # ---------------------------------------------------------------------------
