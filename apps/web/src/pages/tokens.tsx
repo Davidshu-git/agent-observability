@@ -18,27 +18,34 @@ function Bar({ value, max, color }: { value: number; max: number; color: string 
 }
 
 export default function TokensPage() {
+  const ALL = "__all__";
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProject, setSelectedProject] = useState<string>("");
+  const [selectedProject, setSelectedProject] = useState<string>(ALL);
   const [overview, setOverview] = useState<TokenOverview | null>(null);
   const [daily, setDaily] = useState<TokenDailyStat[]>([]);
   const [byModel, setByModel] = useState<TokenByModel[]>([]);
+  const [projectStats, setProjectStats] = useState<Record<string, TokenOverview>>({});
   const [days, setDays] = useState(14);
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    api.projects().then((ps) => {
-      setProjects(ps);
-      if (ps.length > 0 && !selectedProject) setSelectedProject(ps[0].id);
-    }).catch((e) => setErr(String(e)));
+    api.projects().then(setProjects).catch((e) => setErr(String(e)));
   }, []);
 
+  const projectIdParam = selectedProject === ALL ? undefined : selectedProject;
+
   useEffect(() => {
-    if (!selectedProject) return;
-    api.tokensOverview(selectedProject).then(setOverview).catch((e) => setErr(String(e)));
-    api.tokensDaily(selectedProject, days).then(setDaily).catch((e) => setErr(String(e)));
-    api.tokensByModel(selectedProject).then(setByModel).catch((e) => setErr(String(e)));
+    api.tokensOverview(projectIdParam).then(setOverview).catch((e) => setErr(String(e)));
+    api.tokensDaily(projectIdParam, days).then(setDaily).catch((e) => setErr(String(e)));
+    api.tokensByModel(projectIdParam).then(setByModel).catch((e) => setErr(String(e)));
   }, [selectedProject, days]);
+
+  useEffect(() => {
+    if (selectedProject !== ALL || projects.length === 0) return;
+    Promise.all(projects.map((p) => api.tokensOverview(p.id).then((ov) => [p.id, ov] as const)))
+      .then((entries) => setProjectStats(Object.fromEntries(entries)))
+      .catch((e) => setErr(String(e)));
+  }, [selectedProject, projects]);
 
   const total = overview ? overview.input_tokens + overview.output_tokens : 0;
 
@@ -53,6 +60,12 @@ export default function TokensPage() {
 
       {/* project tabs */}
       <div style={{ display: "flex", gap: 6, marginBottom: "1.5rem" }}>
+        <button
+          onClick={() => setSelectedProject(ALL)}
+          className={`tag-btn${selectedProject === ALL ? " active" : ""}`}
+        >
+          全部
+        </button>
         {projects.map((p) => (
           <button
             key={p.id}
@@ -94,6 +107,50 @@ export default function TokensPage() {
 
       {!overview && !err && (
         <p style={{ color: "var(--text-dim)" }}>暂无 Token 数据，请先同步日志。</p>
+      )}
+
+      {/* all-projects breakdown table */}
+      {selectedProject === ALL && byModel.length > 0 && overview && (
+        <div style={{ marginTop: "1.5rem" }}>
+          <div style={{ color: "var(--text-muted)", fontSize: 13, fontWeight: 600, marginBottom: "0.75rem" }}>各项目占比</div>
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                  {["项目", "调用次数", "输入", "输出", "合计", "占比"].map((h) => (
+                    <th key={h} style={{ padding: "8px 12px", textAlign: h === "项目" ? "left" : "right", color: "var(--text-muted)", fontWeight: 600 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map((p, i) => {
+                  const proj = projectStats[p.id];
+                  if (!proj) return null;
+                  const grandTotal = overview.input_tokens + overview.output_tokens;
+                  const projTotal = proj.input_tokens + proj.output_tokens;
+                  const pct = grandTotal > 0 ? Math.round((projTotal / grandTotal) * 100) : 0;
+                  return (
+                    <tr key={p.id} style={{ borderBottom: i < projects.length - 1 ? "1px solid var(--border)" : undefined }}>
+                      <td style={{ padding: "8px 12px", color: "var(--text)", fontWeight: 500 }}>{p.display_name}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--amber)", fontVariantNumeric: "tabular-nums" }}>{proj.calls.toLocaleString()}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--blue)", fontFamily: "var(--font-mono)" }}>{fmt(proj.input_tokens)}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--green)", fontFamily: "var(--font-mono)" }}>{fmt(proj.output_tokens)}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--text)", fontWeight: 600, fontFamily: "var(--font-mono)" }}>{fmt(projTotal)}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", minWidth: 90 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+                          <div style={{ width: 60, height: 4, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
+                            <div style={{ width: `${pct}%`, height: "100%", background: "var(--blue)", borderRadius: 2 }} />
+                          </div>
+                          <span style={{ color: "var(--text-dim)", fontSize: 11, minWidth: 28, textAlign: "right" }}>{pct}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {/* by-model table */}
