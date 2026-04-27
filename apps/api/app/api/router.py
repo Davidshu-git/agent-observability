@@ -603,8 +603,11 @@ async def stats_overview(db: AsyncSession = Depends(get_db)):
     Returns a per-project summary: session count, today's sessions,
     token totals, last session time.
     """
-    from datetime import date, timezone
-    today = date.today()  # Python date object, binds as DATE in PostgreSQL
+    from datetime import datetime, timezone, timedelta
+    CST = timezone(timedelta(hours=8))
+    today = datetime.now(CST).date()
+    today_start_utc = datetime.combine(today, datetime.min.time()).replace(tzinfo=CST).astimezone(timezone.utc)
+    today_end_utc = today_start_utc + timedelta(days=1)
 
     projects_result = await db.execute(select(Project).where(Project.is_active == True))
     projects = projects_result.scalars().all()
@@ -617,12 +620,12 @@ async def stats_overview(db: AsyncSession = Depends(get_db)):
         )
         total_sessions = total_sessions_r.scalar() or 0
 
-        # today's sessions
-        from sqlalchemy import cast, Date as SADate
+        # today's sessions (CST timezone)
         today_sessions_r = await db.execute(
             select(func.count()).select_from(Session).where(
                 Session.project_id == p.id,
-                cast(Session.started_at, SADate) == today,
+                Session.started_at >= today_start_utc,
+                Session.started_at < today_end_utc,
             )
         )
         today_sessions = today_sessions_r.scalar() or 0

@@ -52,7 +52,7 @@ export default function OverviewPage() {
     setSyncMsgs((m) => ({ ...m, [projectId]: "" }));
     try {
       const r = await fn();
-      setSyncMsgs((m) => ({ ...m, [projectId]: `+${r.events_inserted}` }));
+      setSyncMsgs((m) => ({ ...m, [projectId]: r.events_inserted > 0 ? `+${r.events_inserted}` : "已最新" }));
       load();
     } catch {
       setSyncMsgs((m) => ({ ...m, [projectId]: "失败" }));
