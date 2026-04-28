@@ -250,6 +250,9 @@ async def get_trace(trace_id: str, db: AsyncSession = Depends(get_db)):
                 "event_id": e.event_id,
                 "event_type": e.event_type,
                 "timestamp": e.timestamp,
+                "session_id": e.session_id,
+                "project_id": e.project_id,
+                "trace_id": e.trace_id,
                 "run_id": e.run_id,
                 "payload": e.payload_json,
             }

@@ -304,12 +304,18 @@ function Timeline({ events }: { events: NormalizedEvent[] }) {
       </div>
 
       <div style={{ flex: 1, overflowY: "auto" }}>
-        {visible.map((e) => {
+        {(() => {
+          const seenTraceIds = new Set<string>();
+          return visible.map((e) => {
           const color = EVENT_COLORS[e.event_type] ?? "var(--text-dim)";
           const isError = e.event_type === "error";
+          const anchorId = e.trace_id && !seenTraceIds.has(e.trace_id)
+            ? (seenTraceIds.add(e.trace_id), `trace-${e.trace_id}`)
+            : undefined;
           return (
             <div
               key={e.event_id}
+              id={anchorId}
               style={{
                 display: "flex",
                 gap: "0.75rem",
@@ -342,7 +348,8 @@ function Timeline({ events }: { events: NormalizedEvent[] }) {
               </div>
             </div>
           );
-        })}
+        });
+        })()}
         {visible.length === 0 && <p style={{ color: "var(--text-dim)" }}>无匹配事件</p>}
       </div>
     </div>
@@ -377,6 +384,14 @@ export default function SessionsPage() {
   // Stable ref so SSE/polling closures always see the current selectedId
   const selectedIdRef = useRef(selectedId);
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+
+  // Scroll selected session into view after list loads (e.g. returning from trace page)
+  const selectedItemRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (selectedId && !loadingSessions) {
+      selectedItemRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [selectedId, loadingSessions]);
 
   useEffect(() => { setAgentFilter("all"); }, [projectId]);
 
@@ -444,6 +459,15 @@ export default function SessionsPage() {
       .finally(() => setLoadingEvents(false));
   }, [selectedId]);
 
+  // Scroll timeline to hash anchor after events load (e.g. returning from trace page)
+  useEffect(() => {
+    if (loadingEvents || events.length === 0) return;
+    const hash = window.location.hash;
+    if (!hash.startsWith("#trace-")) return;
+    const el = document.getElementById(hash.slice(1));
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [loadingEvents, events]);
+
   function selectSession(id: string) {
     router.push(
       { pathname: "/sessions", query: { ...(projectId ? { project_id: projectId } : {}), session_id: id } },
@@ -503,6 +527,7 @@ export default function SessionsPage() {
                   return (
                     <div
                       key={s.id}
+                      ref={isSelected ? selectedItemRef : undefined}
                       onClick={() => selectSession(s.id)}
                       className={`session-list-item${isSelected ? " selected" : ""}`}
                       style={{ borderLeftColor: isSelected ? "var(--blue)" : color + "66" }}

@@ -191,7 +191,7 @@ export default function TraceDetailPage() {
         <span className="breadcrumb-sep">›</span>
         {sessionId && (
           <>
-            <Link href={`/sessions?session_id=${sessionId}${projectId ? `&project_id=${projectId}` : ""}`}>
+            <Link href={`/sessions?session_id=${sessionId}${projectId ? `&project_id=${projectId}` : ""}#trace-${traceId}`}>
               会话
             </Link>
             <span className="breadcrumb-sep">›</span>
