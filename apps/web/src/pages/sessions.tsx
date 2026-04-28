@@ -140,16 +140,55 @@ function EventDetail({ event }: { event: NormalizedEvent }) {
   if (t === "model_call") {
     const durMs = p.duration_ms as number | null;
     const ok = p.success as boolean;
+    const prompt = p.prompt as string | null;
+    const rawOutput = p.raw_output as string | null;
+    const hasDetail = !!(prompt || rawOutput);
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ color: "var(--amber)", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600 }}>
-          {p.model as string}
-        </span>
-        <span style={{ color: "var(--text-dim)", fontSize: 11, fontFamily: "var(--font-mono)" }}>
-          ↑{(p.input_tokens as number) || 0} ↓{(p.output_tokens as number) || 0}
-          {durMs != null && ` ${Math.round(durMs)}ms`}
-        </span>
-        {!ok && <span style={{ color: "var(--red)", fontSize: 11, fontWeight: 600 }}>FAILED</span>}
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ color: "var(--amber)", fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600 }}>
+            {p.model as string}
+          </span>
+          <span style={{ color: "var(--text-dim)", fontSize: 11, fontFamily: "var(--font-mono)" }}>
+            ↑{(p.input_tokens as number) || 0} ↓{(p.output_tokens as number) || 0}
+            {durMs != null && ` ${Math.round(durMs)}ms`}
+          </span>
+          {!ok && <span style={{ color: "var(--red)", fontSize: 11, fontWeight: 600 }}>FAILED</span>}
+          {hasDetail && (
+            <button onClick={() => setExpanded(!expanded)} style={{
+              background: "none", border: "none", color: "var(--text-dim)",
+              fontSize: 10, cursor: "pointer", padding: 0,
+            }}>
+              {expanded ? "▲ 隐藏" : "▼ 详情"}
+            </button>
+          )}
+        </div>
+        {expanded && hasDetail && (
+          <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+            {prompt && (
+              <pre style={{
+                margin: 0, padding: "6px 10px",
+                background: "rgba(0,0,0,.4)", border: "1px solid var(--border)",
+                borderRadius: "var(--r-sm)",
+                color: "var(--text-muted)", fontSize: 11, whiteSpace: "pre-wrap",
+                wordBreak: "break-all", maxHeight: 180, overflow: "auto",
+              }}>
+                <span style={{ color: "var(--text-dim)", fontSize: 10 }}>prompt↓</span>{"\n"}{prompt}
+              </pre>
+            )}
+            {rawOutput && (
+              <pre style={{
+                margin: 0, padding: "6px 10px",
+                background: "rgba(0,0,0,.4)", border: "1px solid var(--border)",
+                borderRadius: "var(--r-sm)",
+                color: "var(--green)", fontSize: 11, whiteSpace: "pre-wrap",
+                wordBreak: "break-all", maxHeight: 180, overflow: "auto",
+              }}>
+                <span style={{ color: "var(--text-dim)", fontSize: 10 }}>output↓</span>{"\n"}{rawOutput}
+              </pre>
+            )}
+          </div>
+        )}
       </div>
     );
   }

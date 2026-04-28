@@ -221,8 +221,8 @@ class MhxyJsonlAdapter:
                 payload={
                     "provider": "dashscope",
                     "model": record.get("model"),
-                    "prompt": None,
-                    "raw_output": None,
+                    "prompt": record.get("prompt"),
+                    "raw_output": record.get("raw_output"),
                     "input_tokens": record.get("input_tokens"),
                     "output_tokens": record.get("output_tokens"),
                     "reasoning_tokens": None,
