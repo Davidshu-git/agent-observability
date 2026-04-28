@@ -68,19 +68,52 @@ function PayloadView({ event }: { event: NormalizedEvent }) {
   }
   if (t === "model_call") {
     const durMs = p.duration_ms as number | null;
+    const hasDetail = p.prompt != null || p.raw_output != null;
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ color: "var(--amber)", fontWeight: 700, fontFamily: "var(--font-mono)", fontSize: 12 }}>
-          {p.model as string}
-        </span>
-        <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
-          ↑{p.input_tokens as number} ↓{p.output_tokens as number}
-          {durMs != null && ` ${Math.round(durMs)}ms`}
-        </span>
-        {event.run_id && (
-          <span style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)" }}>
-            run:{event.run_id.slice(-8)}
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ color: "var(--amber)", fontWeight: 700, fontFamily: "var(--font-mono)", fontSize: 12 }}>
+            {p.model as string}
           </span>
+          <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+            ↑{p.input_tokens as number} ↓{p.output_tokens as number}
+            {durMs != null && ` ${Math.round(durMs)}ms`}
+          </span>
+          {event.run_id && (
+            <span style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)" }}>
+              run:{event.run_id.slice(-8)}
+            </span>
+          )}
+          {hasDetail && (
+            <button onClick={() => setExpanded(!expanded)} style={{
+              background: "none", border: "none", color: "var(--text-dim)",
+              fontSize: 10, cursor: "pointer", padding: 0,
+            }}>
+              {expanded ? "▲" : "▼ 详情"}
+            </button>
+          )}
+        </div>
+        {expanded && hasDetail && (
+          <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+            {p.prompt != null && (
+              <pre style={{
+                padding: "6px 10px", background: "rgba(0,0,0,.4)",
+                borderRadius: "var(--r-sm)", color: "var(--text-muted)",
+                fontSize: 10, overflow: "auto", maxHeight: 160, whiteSpace: "pre-wrap",
+              }}>
+                {String(p.prompt)}
+              </pre>
+            )}
+            {p.raw_output != null && (
+              <pre style={{
+                padding: "6px 10px", background: "rgba(0,0,0,.4)",
+                borderRadius: "var(--r-sm)", color: "var(--text-muted)",
+                fontSize: 10, overflow: "auto", maxHeight: 160, whiteSpace: "pre-wrap",
+              }}>
+                {String(p.raw_output)}
+              </pre>
+            )}
+          </div>
         )}
       </div>
     );

@@ -36,6 +36,11 @@ _COST_CONFIG: dict[str, dict[str, float]] = {
         "cache_hit_per_m": 0.0,
         "output_per_m":    10.0,
     },
+    "qwen3-vl-flash": {
+        "input_per_m":     0.15,
+        "cache_hit_per_m": 0.0,
+        "output_per_m":    1.5,
+    },
 }
 
 
