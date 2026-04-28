@@ -4,6 +4,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import type { NormalizedEvent } from "@/types/events";
 import CopyableId from "@/components/CopyableId";
+import { fmtCost } from "@/lib/format";
 
 const EVENT_COLORS: Record<string, string> = {
   session_started: "var(--green)",
@@ -158,6 +159,7 @@ export default function TraceDetailPage() {
   const router = useRouter();
   const traceId = router.query.trace_id as string;
   const [events, setEvents] = useState<NormalizedEvent[]>([]);
+  const [totalCost, setTotalCost] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -165,7 +167,7 @@ export default function TraceDetailPage() {
     if (!traceId) return;
     setLoading(true);
     api.trace(traceId)
-      .then((r) => setEvents(r.events))
+      .then((r) => { setEvents(r.events); setTotalCost(r.total_cost ?? null); })
       .catch((e) => setErr(String(e)))
       .finally(() => setLoading(false));
   }, [traceId]);
@@ -215,6 +217,7 @@ export default function TraceDetailPage() {
           <SummaryCard label="工具调用" value={String(toolCalls.length)} color="var(--orange)" />
           <SummaryCard label="输入 Token" value={fmt(inTok)} color="var(--blue)" />
           <SummaryCard label="输出 Token" value={fmt(outTok)} color="var(--green)" />
+          <SummaryCard label="费用" value={totalCost != null ? fmtCost(totalCost) : "包月"} color="var(--teal)" />
         </div>
       )}
 

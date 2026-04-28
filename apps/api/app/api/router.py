@@ -243,8 +243,20 @@ async def get_trace(trace_id: str, db: AsyncSession = Depends(get_db)):
     events = result.scalars().all()
     if not events:
         raise HTTPException(status_code=404, detail="Trace not found")
+    total_cost: float | None = None
+    for e in events:
+        if e.event_type == "model_call" and e.payload_json:
+            c = _calc_cost(
+                e.payload_json.get("model") or "",
+                e.payload_json.get("input_tokens") or 0,
+                e.payload_json.get("cache_read_tokens") or 0,
+                e.payload_json.get("output_tokens") or 0,
+            )
+            if c is not None:
+                total_cost = (total_cost or 0.0) + c
     return {
         "trace_id": trace_id,
+        "total_cost": total_cost,
         "events": [
             {
                 "event_id": e.event_id,
