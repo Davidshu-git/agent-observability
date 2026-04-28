@@ -309,6 +309,7 @@ function Timeline({ events }: { events: NormalizedEvent[] }) {
           return visible.map((e) => {
           const color = EVENT_COLORS[e.event_type] ?? "var(--text-dim)";
           const isError = e.event_type === "error";
+          const isThought = e.event_type === "thought";
           const anchorId = e.trace_id && !seenTraceIds.has(e.trace_id)
             ? (seenTraceIds.add(e.trace_id), `trace-${e.trace_id}`)
             : undefined;
@@ -320,10 +321,11 @@ function Timeline({ events }: { events: NormalizedEvent[] }) {
                 display: "flex",
                 gap: "0.75rem",
                 marginBottom: "0.4rem",
+                marginLeft: isThought ? "1.5rem" : 0,
                 paddingLeft: "0.75rem",
                 paddingTop: isError ? 4 : 0,
                 paddingBottom: isError ? 4 : 0,
-                borderLeft: `2px solid ${color}`,
+                borderLeft: `${isThought ? "1px dashed" : "2px solid"} ${color}`,
                 borderRadius: isError ? "0 var(--r) var(--r) 0" : 0,
                 background: isError ? "rgba(248,113,113,.04)" : "transparent",
                 boxShadow: isError ? "inset 0 0 12px rgba(248,113,113,.06)" : "none",
