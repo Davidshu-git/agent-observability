@@ -314,6 +314,11 @@ async def tokens_daily(
 ):
     since = datetime.now(timezone.utc) - timedelta(days=days)
     day_col = func.date(Event.timestamp).label("date")
+    base_filter = [Event.event_type == "model_call", Event.timestamp >= since]
+    if project_id:
+        base_filter.append(Event.project_id == project_id)
+
+    # Token totals per day
     q = (
         select(
             day_col,
@@ -321,21 +326,49 @@ async def tokens_daily(
             func.sum(Event.payload_json["output_tokens"].as_integer()).label("output_tokens"),
             func.count().label("calls"),
         )
-        .where(Event.event_type == "model_call", Event.timestamp >= since)
+        .where(*base_filter)
         .group_by(func.date(Event.timestamp))
         .order_by(func.date(Event.timestamp).desc())
     )
-    if project_id:
-        q = q.where(Event.project_id == project_id)
     result = await db.execute(q)
+    rows = result.all()
+
+    # Cost per day via (date, model) breakdown
+    model_col = Event.payload_json["model"].as_string().label("model")
+    cost_q = (
+        select(
+            func.date(Event.timestamp).label("date"),
+            model_col,
+            func.sum(Event.payload_json["input_tokens"].as_integer()).label("inp"),
+            func.sum(Event.payload_json["cache_read_tokens"].as_integer()).label("cache"),
+            func.sum(Event.payload_json["output_tokens"].as_integer()).label("out"),
+        )
+        .where(*base_filter)
+        .group_by(func.date(Event.timestamp), model_col)
+    )
+    cost_result = await db.execute(cost_q)
+    cost_by_date: dict[str, float] = {}
+    model_costs_by_date: dict[str, dict[str, float]] = {}
+    for cr in cost_result.all():
+        c = _calc_cost(cr.model or "", cr.inp or 0, cr.cache or 0, cr.out or 0)
+        if c is not None:
+            date_str = str(cr.date)
+            cost_by_date[date_str] = (cost_by_date.get(date_str) or 0.0) + c
+            model_costs_by_date.setdefault(date_str, {})[cr.model or "unknown"] = c
+
     return [
         {
             "date": str(r.date),
             "input_tokens": r.input_tokens or 0,
             "output_tokens": r.output_tokens or 0,
             "calls": r.calls,
+            "cost": cost_by_date.get(str(r.date)),
+            "model_costs": [
+                {"model": m, "cost": c}
+                for m, c in (model_costs_by_date.get(str(r.date)) or {}).items()
+            ],
         }
-        for r in result.all()
+        for r in rows
     ]
 
 

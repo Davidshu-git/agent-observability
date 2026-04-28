@@ -50,6 +50,8 @@ export interface TokenDailyStat {
   input_tokens: number;
   output_tokens: number;
   calls: number;
+  cost: number | null;
+  model_costs: { model: string; cost: number }[];
 }
 
 export interface TokenByModel {
