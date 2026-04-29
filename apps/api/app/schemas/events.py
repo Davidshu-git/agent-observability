@@ -27,6 +27,7 @@ class EventType(str, Enum):
     TOOL_RESULT = "tool_result"
     METRIC = "metric"
     EVENT = "event"
+    TASK_EVENT = "task_event"
     ERROR = "error"
 
 

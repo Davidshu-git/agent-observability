@@ -49,6 +49,13 @@ PROJECT_ID = "mhxy"
 AGENT_ID = "game-bot"
 SOURCE = "mhxy_jsonl"
 
+_RUNNER_EVENT_TYPES = frozenset({
+    "scan_started",
+    "task_started", "task_completed", "task_failed", "task_needs_human",
+    "task_step_started", "task_step_completed", "task_step_failed",
+    "task_denylist_triggered", "instance_status", "reconnect_result",
+})
+
 
 def _content_key(session_id: str, record: dict) -> str:
     """
@@ -112,11 +119,20 @@ class MhxyJsonlAdapter:
                 external_key = _content_key(session_id, record)
                 collected_at = _now()
 
-                # Advance trace when a user message arrives
                 rtype = record.get("type")
+
+                # Advance trace for conversation turns
                 if rtype == "message" and record.get("role") == "user":
                     trace_counter += 1
                     run_counter = 0
+                    current_trace_id = f"{session_id}:t{trace_counter}"
+                # Each task run gets its own trace
+                elif rtype == "task_started":
+                    trace_counter += 1
+                    current_trace_id = f"{session_id}:t{trace_counter}"
+                # Diagnostic scans: scan_started is the explicit trace boundary
+                elif rtype == "scan_started":
+                    trace_counter += 1
                     current_trace_id = f"{session_id}:t{trace_counter}"
 
                 # Assign run_id to each model_call
@@ -272,6 +288,14 @@ class MhxyJsonlAdapter:
                     "duration_ms": record.get("duration_ms"),
                 },
                 extra={"error_message": record.get("error_message")} if record.get("error_message") else {},
+            )
+
+        # Runner / automation events — flat payload, type field preserved inside
+        if rtype in _RUNNER_EVENT_TYPES:
+            return NormalizedEvent(
+                **base,
+                event_type=EventType.TASK_EVENT,
+                payload=record,
             )
 
         # Unknown types — store as generic event, preserve all fields in extra

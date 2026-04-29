@@ -22,7 +22,21 @@ const EVENT_COLORS: Record<string, string> = {
   tool_result:     "var(--orange)",
   metric:          "var(--teal)",
   event:           "var(--teal)",
+  task_event:      "var(--green)",
   error:           "var(--red)",
+};
+
+const TASK_EVENT_ICONS: Record<string, string> = {
+  task_started:           "🎮",
+  task_completed:         "✅",
+  task_failed:            "❌",
+  task_needs_human:       "👨‍🔧",
+  task_step_started:      "▶",
+  task_step_completed:    "✓",
+  task_step_failed:       "✗",
+  task_denylist_triggered:"🚨",
+  instance_status:        "📊",
+  reconnect_result:       "🔌",
 };
 
 const AGENT_PALETTE = ["var(--blue)", "var(--green)", "var(--amber)", "var(--purple)", "var(--orange)", "var(--teal)"];
@@ -260,6 +274,92 @@ function EventDetail({ event }: { event: NormalizedEvent }) {
       <div style={{ color: "var(--red)", fontSize: 12 }}>
         <span style={{ fontWeight: 700 }}>{p.name as string}: </span>
         {p.message as string}
+      </div>
+    );
+  }
+
+  if (t === "task_event") {
+    const subtype = p.type as string;
+    const port = p.port as string;
+    const icon = TASK_EVENT_ICONS[subtype] ?? "⚙";
+    const ocrTexts = (p.ocr_texts as string[] | undefined) ?? [];
+    const hasOcr = subtype === "instance_status" && ocrTexts.length > 0;
+
+    const stateColor = (s: string) =>
+      s === "main_ui" ? "var(--green)"
+      : s === "disconnected" ? "var(--red)"
+      : s === "login_screen" ? "var(--amber)"
+      : "var(--text-dim)";
+
+    return (
+      <div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+          <span>{icon}</span>
+          <span style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)" }}>{subtype}</span>
+          <span style={{ color: "var(--teal)", fontFamily: "var(--font-mono)" }}>:{port}</span>
+
+          {subtype === "task_started" && <>
+            <span style={{ fontFamily: "var(--font-mono)" }}>{p.task_id as string}</span>
+            {p.task_name && <span style={{ color: "var(--text-dim)" }}>{p.task_name as string}</span>}
+          </>}
+
+          {subtype === "task_completed" && <>
+            <span style={{ fontFamily: "var(--font-mono)" }}>{p.task_id as string}</span>
+            {p.elapsed_ms != null && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{Math.round(p.elapsed_ms as number)}ms</span>}
+          </>}
+
+          {(subtype === "task_failed" || subtype === "task_needs_human") && <>
+            <span style={{ color: "var(--red)", fontFamily: "var(--font-mono)" }}>{p.task_id as string}</span>
+            <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
+              {((p.failed_step || p.reason) as string | undefined)?.slice(0, 80)}
+            </span>
+          </>}
+
+          {(subtype === "task_step_started" || subtype === "task_step_completed" || subtype === "task_step_failed") && <>
+            <span style={{ fontFamily: "var(--font-mono)" }}>[{p.step_id as string}]</span>
+            <span style={{ color: "var(--orange)" }}>{p.action as string}</span>
+            {subtype === "task_step_completed" && p.elapsed_ms != null &&
+              <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{Math.round(p.elapsed_ms as number)}ms</span>}
+            {subtype === "task_step_failed" &&
+              <span style={{ color: "var(--red)", fontSize: 11 }}>×{p.attempt as number} {(p.message as string)?.slice(0, 60)}</span>}
+          </>}
+
+          {subtype === "task_denylist_triggered" && <>
+            <span style={{ fontFamily: "var(--font-mono)" }}>[{p.step_id as string}]</span>
+            <span style={{ color: "var(--red)" }}>敏感词: {JSON.stringify(p.matched)}</span>
+          </>}
+
+          {subtype === "instance_status" && <>
+            <span style={{ color: stateColor(p.state as string), fontFamily: "var(--font-mono)" }}>{p.state as string}</span>
+            {hasOcr && (
+              <button onClick={() => setExpanded(!expanded)} style={{
+                background: "none", border: "none", color: "var(--text-dim)",
+                fontSize: 10, cursor: "pointer", padding: 0,
+              }}>
+                {expanded ? "▲ 收起" : `▼ OCR(${ocrTexts.length})`}
+              </button>
+            )}
+          </>}
+
+          {subtype === "reconnect_result" && <>
+            <span style={{ color: stateColor(p.initial_state as string), fontFamily: "var(--font-mono)" }}>{p.initial_state as string}</span>
+            <span style={{ color: "var(--text-dim)" }}>→</span>
+            <span style={{ color: stateColor(p.final_state as string), fontFamily: "var(--font-mono)" }}>{p.final_state as string}</span>
+            <span>{p.success === null ? "跳过" : (p.success as boolean) ? "✅" : "❌"}</span>
+          </>}
+        </div>
+
+        {expanded && hasOcr && (
+          <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {ocrTexts.map((text, i) => (
+              <span key={i} style={{
+                background: "rgba(45,212,191,.08)", border: "1px solid rgba(45,212,191,.15)",
+                borderRadius: 3, padding: "1px 6px",
+                fontSize: 11, color: "var(--teal)", fontFamily: "var(--font-mono)",
+              }}>{text}</span>
+            ))}
+          </div>
+        )}
       </div>
     );
   }

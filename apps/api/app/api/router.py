@@ -212,19 +212,17 @@ async def session_timeline(
     offset: int = Query(0),
     db: AsyncSession = Depends(get_db),
 ):
-    events_result, rounds_result = await asyncio.gather(
-        db.execute(
-            select(Event)
-            .where(Event.session_id == session_id)
-            .order_by(Event.timestamp.desc(), Event.id.desc())
-            .limit(limit)
-            .offset(offset)
-        ),
-        db.execute(
-            select(Event.trace_id, func.count().label("rounds"))
-            .where(Event.session_id == session_id, Event.event_type == "model_call", Event.trace_id.isnot(None))
-            .group_by(Event.trace_id)
-        ),
+    events_result = await db.execute(
+        select(Event)
+        .where(Event.session_id == session_id)
+        .order_by(Event.timestamp.desc(), Event.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rounds_result = await db.execute(
+        select(Event.trace_id, func.count().label("rounds"))
+        .where(Event.session_id == session_id, Event.event_type == "model_call", Event.trace_id.isnot(None))
+        .group_by(Event.trace_id)
     )
     events = events_result.scalars().all()
     rounds_by_trace = {row.trace_id: row.rounds for row in rounds_result}
