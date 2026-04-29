@@ -365,12 +365,16 @@ async def tokens_daily(
     cost_result = await db.execute(cost_q)
     cost_by_date: dict[str, float] = {}
     model_costs_by_date: dict[str, dict[str, float]] = {}
+    model_tokens_by_date: dict[str, dict[str, int]] = {}
     for cr in cost_result.all():
-        c = _calc_cost(cr.model or "", cr.inp or 0, cr.cache or 0, cr.out or 0)
+        date_str = str(cr.date)
+        model = cr.model or "unknown"
+        total_tok = (cr.inp or 0) + (cr.out or 0)
+        model_tokens_by_date.setdefault(date_str, {})[model] = total_tok
+        c = _calc_cost(model, cr.inp or 0, cr.cache or 0, cr.out or 0)
         if c is not None:
-            date_str = str(cr.date)
             cost_by_date[date_str] = (cost_by_date.get(date_str) or 0.0) + c
-            model_costs_by_date.setdefault(date_str, {})[cr.model or "unknown"] = c
+            model_costs_by_date.setdefault(date_str, {})[model] = c
 
     return [
         {
@@ -382,6 +386,10 @@ async def tokens_daily(
             "model_costs": [
                 {"model": m, "cost": c}
                 for m, c in (model_costs_by_date.get(str(r.date)) or {}).items()
+            ],
+            "model_tokens": [
+                {"model": m, "total_tokens": t}
+                for m, t in (model_tokens_by_date.get(str(r.date)) or {}).items()
             ],
         }
         for r in rows

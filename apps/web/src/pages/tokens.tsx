@@ -271,12 +271,15 @@ function DailyChart({ data }: { data: TokenDailyStat[] }) {
 
   const hasCost = sorted.some((d) => d.cost != null);
   const MODEL_PALETTE = ["var(--teal)", "var(--amber)", "var(--purple)", "var(--orange)", "var(--blue)"];
-  const allModels = Array.from(new Set(sorted.flatMap((d) => (d.model_costs ?? []).map((mc) => mc.model))));
+  const allModels = Array.from(new Set(sorted.flatMap((d) => [
+    ...(d.model_tokens ?? []).map((mt) => mt.model),
+    ...(d.model_costs ?? []).map((mc) => mc.model),
+  ])));
   const modelColor = (m: string) => MODEL_PALETTE[allModels.indexOf(m) % MODEL_PALETTE.length];
 
   const maxVal = mode === "cost"
     ? Math.max(...sorted.map((d) => d.cost ?? 0), 0.001)
-    : Math.max(...sorted.map((d) => d.input_tokens + d.output_tokens), 1);
+    : Math.max(...sorted.map((d) => (d.model_tokens ?? []).reduce((s, mt) => s + mt.total_tokens, 0)), 1);
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) =>
     mode === "cost" ? maxVal * f : Math.round(maxVal * f)
   );
@@ -284,20 +287,12 @@ function DailyChart({ data }: { data: TokenDailyStat[] }) {
   return (
     <div className="card" style={{ padding: "1rem", overflowX: "auto" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "0.75rem" }}>
-        {mode === "token"
-          ? [["输入", "var(--blue)"], ["输出", "var(--green)"]].map(([label, color]) => (
-              <span key={label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-muted)" }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, background: color, display: "inline-block" }} />
-                {label}
-              </span>
-            ))
-          : allModels.map((m) => (
-              <span key={m} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-muted)" }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, background: modelColor(m), display: "inline-block" }} />
-                {m}
-              </span>
-            ))
-        }
+        {allModels.map((m) => (
+          <span key={m} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-muted)" }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: modelColor(m), display: "inline-block" }} />
+            {m}
+          </span>
+        ))}
         {hasCost && (
           <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
             {(["token", "cost"] as const).map((m) => (
@@ -330,20 +325,36 @@ function DailyChart({ data }: { data: TokenDailyStat[] }) {
           return (
             <g key={d.date} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)} style={{ cursor: "default" }}>
               {mode === "token" ? (() => {
-                const inH = (d.input_tokens / maxVal) * chartH;
-                const outH = (d.output_tokens / maxVal) * chartH;
+                const mts = allModels
+                  .map((m) => ({ model: m, total_tokens: (d.model_tokens ?? []).find((mt) => mt.model === m)?.total_tokens ?? 0 }))
+                  .filter((mt) => mt.total_tokens > 0);
+                let stackY = PAD_T + chartH;
                 return (
                   <>
-                    <rect x={x} y={PAD_T + chartH - inH} width={barW} height={inH} fill="var(--blue)" opacity={isHov ? 1 : 0.75} rx={1} />
-                    <rect x={x} y={PAD_T + chartH - inH - outH} width={barW} height={outH} fill="var(--green)" opacity={isHov ? 1 : 0.75} rx={1} />
-                    {isHov && (
-                      <g>
-                        <rect x={x + barW / 2 - 44} y={PAD_T} width={88} height={44} fill="var(--surface)" stroke="var(--border)" strokeWidth={1} rx={4} />
-                        <text x={x + barW / 2} y={PAD_T + 13} textAnchor="middle" fontSize={9} fill="var(--text)" fontWeight={600}>{d.date}</text>
-                        <text x={x + barW / 2} y={PAD_T + 25} textAnchor="middle" fontSize={9} fill="var(--text-muted)">合计 {fmt(d.input_tokens + d.output_tokens)}</text>
-                        <text x={x + barW / 2} y={PAD_T + 37} textAnchor="middle" fontSize={9} fill="var(--text-dim)">{d.calls} 次调用</text>
-                      </g>
-                    )}
+                    {mts.map((mt) => {
+                      const h = (mt.total_tokens / maxVal) * chartH;
+                      stackY -= h;
+                      return (
+                        <rect key={mt.model} x={x} y={stackY} width={barW} height={h}
+                          fill={modelColor(mt.model)} opacity={isHov ? 1 : 0.75} rx={1} />
+                      );
+                    })}
+                    {isHov && (() => {
+                      const tipH = 14 + mts.length * 12 + 12;
+                      const tipX = Math.min(x + barW / 2 - 48, W - PAD_R - 96);
+                      return (
+                        <g>
+                          <rect x={tipX} y={PAD_T} width={96} height={tipH} fill="var(--surface)" stroke="var(--border)" strokeWidth={1} rx={4} />
+                          <text x={tipX + 48} y={PAD_T + 11} textAnchor="middle" fontSize={9} fill="var(--text)" fontWeight={600}>{d.date}</text>
+                          {mts.map((mt, mi) => (
+                            <text key={mt.model} x={tipX + 48} y={PAD_T + 11 + (mi + 1) * 12} textAnchor="middle" fontSize={9} fill={modelColor(mt.model)}>
+                              {mt.model.split("-").slice(-2).join("-")} {fmt(mt.total_tokens)}
+                            </text>
+                          ))}
+                          <text x={tipX + 48} y={PAD_T + 11 + (mts.length + 1) * 12} textAnchor="middle" fontSize={9} fill="var(--text-dim)">{d.calls} 次调用</text>
+                        </g>
+                      );
+                    })()}
                   </>
                 );
               })() : (() => {
