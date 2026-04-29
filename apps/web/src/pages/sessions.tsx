@@ -64,6 +64,30 @@ function fmtDate(s: string | null | undefined) {
 function parseMd(text: string): string {
   return DOMPurify.sanitize(marked.parse(text) as string);
 }
+function fmtMsValue(v: unknown): string | null {
+  if (typeof v !== "number") return null;
+  if (v >= 1000) return `${(v / 1000).toFixed(v >= 10000 ? 1 : 2)}s`;
+  return `${Math.round(v)}ms`;
+}
+function hasObjectContent(v: unknown): boolean {
+  return !!v && typeof v === "object" && !Array.isArray(v) && Object.keys(v as Record<string, unknown>).length > 0;
+}
+function JsonBlock({ value }: { value: unknown }) {
+  return (
+    <pre style={{
+      margin: 0,
+      maxHeight: 180,
+      overflow: "auto",
+      color: "var(--text-muted)",
+      fontSize: 10,
+      lineHeight: 1.45,
+      fontFamily: "var(--font-mono)",
+      whiteSpace: "pre-wrap",
+    }}>
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  );
+}
 
 // ── event detail ──────────────────────────────────────────────────────────────
 
@@ -284,11 +308,26 @@ function EventDetail({ event }: { event: NormalizedEvent }) {
     const icon = TASK_EVENT_ICONS[subtype] ?? "⚙";
     const ocrTexts = (p.ocr_texts as string[] | undefined) ?? [];
     const hasOcr = subtype === "instance_status" && ocrTexts.length > 0;
+    const elapsed = fmtMsValue(p.elapsed_ms ?? p.duration_ms);
+    const verify = fmtMsValue(p.verify_ms);
+    const target = p.target as Record<string, unknown> | undefined;
+    const detail = p.detail as Record<string, unknown> | undefined;
+    const stepResults = p.step_results as unknown[] | undefined;
+    const errorDetails = p.error_details as Record<string, unknown> | undefined;
+    const extra = p.extra as Record<string, unknown> | undefined;
+    const hasExpandedDetails =
+      !!p.task_run_id || !!p.phase || !!p.timeout_sec || !!p.max_attempts ||
+      hasObjectContent(target) || hasObjectContent(detail) ||
+      hasObjectContent(errorDetails) || hasObjectContent(extra) ||
+      (Array.isArray(stepResults) && stepResults.length > 0);
 
     const stateColor = (s: string) =>
       s === "main_ui" ? "var(--green)"
       : s === "disconnected" ? "var(--red)"
       : s === "login_screen" ? "var(--amber)"
+      : s === "update_restart" ? "var(--orange)"
+      : s === "android_home" ? "var(--blue)"
+      : s === "app_loading" ? "var(--teal)"
       : "var(--text-dim)";
 
     return (
@@ -297,15 +336,17 @@ function EventDetail({ event }: { event: NormalizedEvent }) {
           <span>{icon}</span>
           <span style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)" }}>{subtype}</span>
           <span style={{ color: "var(--teal)", fontFamily: "var(--font-mono)" }}>:{port}</span>
+          {p.phase && <span style={{ color: "var(--purple)", fontSize: 10, fontFamily: "var(--font-mono)" }}>{p.phase as string}</span>}
 
           {subtype === "task_started" && <>
             <span style={{ fontFamily: "var(--font-mono)" }}>{p.task_id as string}</span>
             {p.task_name && <span style={{ color: "var(--text-dim)" }}>{p.task_name as string}</span>}
+            {typeof p.total_steps === "number" && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{p.total_steps} steps</span>}
           </>}
 
           {subtype === "task_completed" && <>
             <span style={{ fontFamily: "var(--font-mono)" }}>{p.task_id as string}</span>
-            {p.elapsed_ms != null && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{Math.round(p.elapsed_ms as number)}ms</span>}
+            {elapsed && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{elapsed}</span>}
           </>}
 
           {(subtype === "task_failed" || subtype === "task_needs_human") && <>
@@ -313,15 +354,20 @@ function EventDetail({ event }: { event: NormalizedEvent }) {
             <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
               {((p.failed_step || p.reason) as string | undefined)?.slice(0, 80)}
             </span>
+            {elapsed && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{elapsed}</span>}
           </>}
 
           {(subtype === "task_step_started" || subtype === "task_step_completed" || subtype === "task_step_failed") && <>
             <span style={{ fontFamily: "var(--font-mono)" }}>[{p.step_id as string}]</span>
             <span style={{ color: "var(--orange)" }}>{p.action as string}</span>
-            {subtype === "task_step_completed" && p.elapsed_ms != null &&
-              <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{Math.round(p.elapsed_ms as number)}ms</span>}
+            {typeof p.attempt === "number" && typeof p.max_attempts === "number" &&
+              <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{p.attempt as number}/{p.max_attempts as number}</span>}
+            {elapsed && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{elapsed}</span>}
+            {verify && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>verify {verify}</span>}
             {subtype === "task_step_failed" &&
-              <span style={{ color: "var(--red)", fontSize: 11 }}>×{p.attempt as number} {(p.message as string)?.slice(0, 60)}</span>}
+              <span style={{ color: "var(--red)", fontSize: 11 }}>
+                {(p.will_retry as boolean) ? "retry" : "stop"} {(p.message as string)?.slice(0, 60)}
+              </span>}
           </>}
 
           {subtype === "task_denylist_triggered" && <>
@@ -347,6 +393,15 @@ function EventDetail({ event }: { event: NormalizedEvent }) {
             <span style={{ color: stateColor(p.final_state as string), fontFamily: "var(--font-mono)" }}>{p.final_state as string}</span>
             <span>{p.success === null ? "跳过" : (p.success as boolean) ? "✅" : "❌"}</span>
           </>}
+
+          {hasExpandedDetails && (
+            <button onClick={() => setExpanded(!expanded)} style={{
+              background: "none", border: "none", color: "var(--text-dim)",
+              fontSize: 10, cursor: "pointer", padding: 0,
+            }}>
+              {expanded ? "▲ 细节" : "▼ 细节"}
+            </button>
+          )}
         </div>
 
         {expanded && hasOcr && (
@@ -358,6 +413,28 @@ function EventDetail({ event }: { event: NormalizedEvent }) {
                 fontSize: 11, color: "var(--teal)", fontFamily: "var(--font-mono)",
               }}>{text}</span>
             ))}
+          </div>
+        )}
+        {expanded && hasExpandedDetails && (
+          <div style={{
+            marginTop: 6,
+            display: "grid",
+            gap: 6,
+            borderTop: "1px solid var(--border)",
+            paddingTop: 6,
+          }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)" }}>
+              {p.task_run_id && <span>run:{String(p.task_run_id).slice(-28)}</span>}
+              {p.timeout_sec != null && <span>timeout:{String(p.timeout_sec)}s</span>}
+              {p.retries != null && <span>retries:{String(p.retries)}</span>}
+              {typeof p.preflight_steps === "number" && <span>preflight:{p.preflight_steps as number}</span>}
+              {typeof p.main_steps === "number" && <span>main:{p.main_steps as number}</span>}
+            </div>
+            {hasObjectContent(target) && <JsonBlock value={{ target }} />}
+            {hasObjectContent(detail) && <JsonBlock value={{ detail }} />}
+            {hasObjectContent(errorDetails) && <JsonBlock value={{ error_details: errorDetails }} />}
+            {hasObjectContent(extra) && <JsonBlock value={{ extra }} />}
+            {Array.isArray(stepResults) && stepResults.length > 0 && <JsonBlock value={{ step_results: stepResults }} />}
           </div>
         )}
       </div>

@@ -16,7 +16,9 @@ Mapping rules:
   - agent_id    = "game-bot"
   - session_id  = record["id"] from the first "session" line in the file
                   (falls back to filename stem if missing)
-  - trace_id    = "{session_id}:t{n}" — each user message starts a new trace
+  - trace_id    = source trace_id/task_run_id when present; otherwise
+                  "{session_id}:t{n}" for legacy conversation turns and
+                  "{session_id}:scan:{hash}" for diagnostic scans
   - run_id      = "{trace_id}:r{m}" — each model_call within the trace gets one
   - event_id    = "mhxy:{file_path}:{line_number}"
   - external_key = same as event_id (used as raw blob key)
@@ -70,6 +72,20 @@ def _content_key(session_id: str, record: dict) -> str:
     return f"mhxy:{session_id}:{digest}"
 
 
+def _scan_trace_id(session_id: str, record: dict) -> str:
+    """Stable trace boundary for scan_started records that do not carry trace_id."""
+    trace_basis = {
+        "timestamp": record.get("timestamp"),
+        "operation": record.get("operation"),
+        "ports": record.get("ports"),
+        "port": record.get("port"),
+    }
+    digest = hashlib.sha256(
+        json.dumps(trace_basis, sort_keys=True, ensure_ascii=False).encode()
+    ).hexdigest()[:12]
+    return f"{session_id}:scan:{digest}"
+
+
 class MhxyJsonlAdapter:
     source_type = SOURCE
 
@@ -121,19 +137,22 @@ class MhxyJsonlAdapter:
 
                 rtype = record.get("type")
 
+                source_trace_id = record.get("trace_id") or record.get("task_run_id")
+
                 # Advance trace for conversation turns
-                if rtype == "message" and record.get("role") == "user":
+                if source_trace_id:
+                    current_trace_id = str(source_trace_id)
+                elif rtype == "message" and record.get("role") == "user":
                     trace_counter += 1
                     run_counter = 0
                     current_trace_id = f"{session_id}:t{trace_counter}"
                 # Each task run gets its own trace
                 elif rtype == "task_started":
                     trace_counter += 1
-                    current_trace_id = f"{session_id}:t{trace_counter}"
+                    current_trace_id = str(record.get("task_run_id") or f"{session_id}:t{trace_counter}")
                 # Diagnostic scans: scan_started is the explicit trace boundary
                 elif rtype == "scan_started":
-                    trace_counter += 1
-                    current_trace_id = f"{session_id}:t{trace_counter}"
+                    current_trace_id = _scan_trace_id(session_id, record)
 
                 # Assign run_id to each model_call
                 run_id: str | None = None
