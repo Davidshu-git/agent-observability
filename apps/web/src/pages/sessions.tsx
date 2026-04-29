@@ -277,10 +277,17 @@ function EventDetail({ event }: { event: NormalizedEvent }) {
 
 // ── timeline ──────────────────────────────────────────────────────────────────
 
-function Timeline({ events }: { events: NormalizedEvent[] }) {
+function Timeline({ events, roundsByTrace }: { events: NormalizedEvent[]; roundsByTrace: Record<string, number> }) {
   const [filter, setFilter] = useState<string>("all");
   const types = Array.from(new Set(events.map((e) => e.event_type)));
   const visible = filter === "all" ? events : events.filter((e) => e.event_type === filter);
+
+  const traceComplete = new Set(
+    events
+      .filter((e) => e.event_type === "message" && (e.payload as Record<string, unknown>).role === "assistant")
+      .map((e) => e.trace_id)
+      .filter(Boolean) as string[]
+  );
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -341,10 +348,18 @@ function Timeline({ events }: { events: NormalizedEvent[] }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <EventDetail event={e} />
                 {e.trace_id && (
-                  <div style={{ marginTop: 4, fontSize: 10 }}>
+                  <div style={{ marginTop: 4, fontSize: 10, display: "flex", alignItems: "center", gap: 6 }}>
                     <Link href={`/traces/${e.trace_id}`} style={{ color: "var(--blue)", opacity: 0.6, fontFamily: "var(--font-mono)" }}>
                       trace:{e.trace_id.slice(-16)}
                     </Link>
+                    {e.trace_id && (roundsByTrace[e.trace_id] ?? 0) > 0 && (
+                      <span style={{
+                        color: traceComplete.has(e.trace_id) ? "var(--amber)" : "var(--text-dim)",
+                        fontSize: 10, fontFamily: "var(--font-mono)", opacity: 0.8,
+                      }}>
+                        {roundsByTrace[e.trace_id]}轮
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -378,6 +393,7 @@ export default function SessionsPage() {
 
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [events, setEvents] = useState<NormalizedEvent[]>([]);
+  const [roundsByTrace, setRoundsByTrace] = useState<Record<string, number>>({});
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [agentFilter, setAgentFilter] = useState<string>("all");
@@ -409,7 +425,7 @@ export default function SessionsPage() {
   // Silent timeline refresh — no loading spinner, used by SSE/polling
   const refreshTimelineSilent = useCallback((id: string) => {
     if (!id) return;
-    api.timeline(id).then(setEvents).catch(() => {});
+    api.timeline(id).then((r) => { setEvents(r.events); setRoundsByTrace(r.rounds_by_trace); }).catch(() => {});
   }, []);
 
   useEffect(fetchSessions, [fetchSessions]);
@@ -456,7 +472,7 @@ export default function SessionsPage() {
     if (!selectedId) return;
     setLoadingEvents(true);
     api.timeline(selectedId)
-      .then(setEvents)
+      .then((r) => { setEvents(r.events); setRoundsByTrace(r.rounds_by_trace); })
       .catch((e) => setErr(String(e)))
       .finally(() => setLoadingEvents(false));
   }, [selectedId]);
@@ -580,7 +596,7 @@ export default function SessionsPage() {
             </div>
           )}
           {loadingEvents && <p style={{ color: "var(--text-dim)" }}>加载中…</p>}
-          {!loadingEvents && selectedId && events.length > 0 && <Timeline events={events} />}
+          {!loadingEvents && selectedId && events.length > 0 && <Timeline events={events} roundsByTrace={roundsByTrace} />}
           {!loadingEvents && selectedId && events.length === 0 && (
             <p style={{ color: "var(--text-dim)" }}>该会话暂无事件</p>
           )}

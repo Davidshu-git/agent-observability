@@ -212,26 +212,37 @@ async def session_timeline(
     offset: int = Query(0),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Event)
-        .where(Event.session_id == session_id)
-        .order_by(Event.timestamp.desc(), Event.id.desc())
-        .limit(limit)
-        .offset(offset)
+    events_result, rounds_result = await asyncio.gather(
+        db.execute(
+            select(Event)
+            .where(Event.session_id == session_id)
+            .order_by(Event.timestamp.desc(), Event.id.desc())
+            .limit(limit)
+            .offset(offset)
+        ),
+        db.execute(
+            select(Event.trace_id, func.count().label("rounds"))
+            .where(Event.session_id == session_id, Event.event_type == "model_call", Event.trace_id.isnot(None))
+            .group_by(Event.trace_id)
+        ),
     )
-    events = result.scalars().all()
-    return [
-        {
-            "event_id": e.event_id,
-            "event_type": e.event_type,
-            "timestamp": e.timestamp,
-            "trace_id": e.trace_id,
-            "run_id": e.run_id,
-            "payload": e.payload_json,
-            "extra": e.extra,
-        }
-        for e in events
-    ]
+    events = events_result.scalars().all()
+    rounds_by_trace = {row.trace_id: row.rounds for row in rounds_result}
+    return {
+        "events": [
+            {
+                "event_id": e.event_id,
+                "event_type": e.event_type,
+                "timestamp": e.timestamp,
+                "trace_id": e.trace_id,
+                "run_id": e.run_id,
+                "payload": e.payload_json,
+                "extra": e.extra,
+            }
+            for e in events
+        ],
+        "rounds_by_trace": rounds_by_trace,
+    }
 
 
 # ---------------------------------------------------------------------------

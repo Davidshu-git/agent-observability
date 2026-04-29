@@ -82,7 +82,7 @@ export const api = {
   }) => get<SessionSummary[]>("/api/sessions", params),
 
   session: (id: string) => get<SessionSummary & { metadata: Record<string, unknown> }>(`/api/sessions/${id}`),
-  timeline: (id: string) => get<NormalizedEvent[]>(`/api/sessions/${id}/timeline`),
+  timeline: (id: string) => get<{ events: NormalizedEvent[]; rounds_by_trace: Record<string, number> }>(`/api/sessions/${id}/timeline`),
   trace: (id: string) => get<{ trace_id: string; total_cost: number | null; events: NormalizedEvent[] }>(`/api/traces/${id}`),
 
   tokensOverview: (project_id?: string) =>
