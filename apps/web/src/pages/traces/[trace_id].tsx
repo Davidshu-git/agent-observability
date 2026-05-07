@@ -181,6 +181,29 @@ function PayloadView({ event }: { event: NormalizedEvent }) {
       </div>
     );
   }
+  if (t === "task_event") {
+    const subtype = p.type as string;
+    const port = p.port as string;
+    const state = p.state as string;
+    const elapsed = typeof p.elapsed_ms === "number" || typeof p.duration_ms === "number"
+      ? `${Math.round((p.elapsed_ms ?? p.duration_ms) as number)}ms` : null;
+    const stateColor = ["disconnected", "failed"].includes(state) ? "var(--red)"
+      : state === "main_ui" ? "var(--green)" : state === "login_screen" ? "var(--amber)" : "var(--text-dim)";
+    return (
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+        <span>{subtype === "instance_status" ? "📊" : subtype === "reconnect_result" ? "🔌" :
+               subtype?.startsWith("task_started") ? "🎮" : subtype?.startsWith("task_completed") ? "✅" :
+               subtype?.startsWith("task_failed") ? "❌" : subtype?.startsWith("task_step") ? "▶" :
+               subtype === "scan_started" ? "🔍" : "⚙"}</span>
+        <span style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)" }}>{subtype}</span>
+        {port && <span style={{ color: "var(--teal)", fontFamily: "var(--font-mono)" }}>:{port}</span>}
+        {state && <span style={{ color: stateColor, fontFamily: "var(--font-mono)", fontSize: 11 }}>{state}</span>}
+        {p.task_name && <span style={{ color: "var(--text-dim)" }}>{p.task_name as string}</span>}
+        {elapsed && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{elapsed}</span>}
+        {p.message && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{(p.message as string).slice(0, 80)}</span>}
+      </div>
+    );
+  }
   return (
     <pre style={{ color: "var(--text-muted)", fontSize: 10, overflow: "auto", maxHeight: 80, margin: 0 }}>
       {JSON.stringify(p, null, 2)}
