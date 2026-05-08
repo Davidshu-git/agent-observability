@@ -189,9 +189,33 @@ function PayloadView({ event }: { event: NormalizedEvent }) {
       ? `${Math.round((p.elapsed_ms ?? p.duration_ms) as number)}ms` : null;
     const stateColor = ["disconnected", "failed"].includes(state) ? "var(--red)"
       : state === "main_ui" ? "var(--green)" : state === "login_screen" ? "var(--amber)" : "var(--text-dim)";
+
+    if (subtype === "executor_perf") {
+      const timing = p.timing as Record<string, number> | undefined;
+      return (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+          <span>⏱</span>
+          <span style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)" }}>executor_perf</span>
+          {port && <span style={{ color: "var(--teal)", fontFamily: "var(--font-mono)" }}>:{port}</span>}
+          {timing?.total_s != null && (
+            <span style={{ color: "var(--teal)", fontSize: 11 }}>{timing.total_s.toFixed(2)}s</span>
+          )}
+          {typeof p.text_count === "number" && (
+            <span style={{ color: "var(--text-dim)", fontSize: 10 }}>{p.text_count} texts</span>
+          )}
+          {timing && (
+            <span style={{ color: "var(--text-dim)", fontSize: 10, fontFamily: "var(--font-mono)" }}>
+              截图{timing.screenshot_s?.toFixed(2)}s OCR{timing.ocr_s?.toFixed(2)}s
+            </span>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
         <span>{subtype === "instance_status" ? "📊" : subtype === "reconnect_result" ? "🔌" :
+               subtype === "executor_perf" ? "⏱" :
                subtype?.startsWith("task_started") ? "🎮" : subtype?.startsWith("task_completed") ? "✅" :
                subtype?.startsWith("task_failed") ? "❌" : subtype?.startsWith("task_step") ? "▶" :
                subtype === "scan_started" ? "🔍" : "⚙"}</span>

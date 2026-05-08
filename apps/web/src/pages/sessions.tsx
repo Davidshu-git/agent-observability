@@ -37,6 +37,7 @@ const TASK_EVENT_ICONS: Record<string, string> = {
   task_denylist_triggered:"🚨",
   instance_status:        "📊",
   reconnect_result:       "🔌",
+  executor_perf:          "⏱",
 };
 
 const AGENT_PALETTE = ["var(--blue)", "var(--green)", "var(--amber)", "var(--purple)", "var(--orange)", "var(--teal)"];
@@ -394,6 +395,24 @@ function EventDetail({ event }: { event: NormalizedEvent }) {
             <span>{p.success === null ? "跳过" : (p.success as boolean) ? "✅" : "❌"}</span>
           </>}
 
+          {subtype === "executor_perf" && <>
+            <span style={{ color: "var(--amber)", fontFamily: "var(--font-mono)" }}>{p.operation as string}</span>
+            {(p.timing as Record<string, number>)?.total_s != null && (
+              <span style={{ color: "var(--teal)", fontSize: 11 }}>
+                {(p.timing as Record<string, number>).total_s.toFixed(2)}s
+              </span>
+            )}
+            {typeof p.text_count === "number" && (
+              <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{p.text_count as number} texts</span>
+            )}
+            <button onClick={() => setExpanded(!expanded)} style={{
+              background: "none", border: "none", color: "var(--text-dim)",
+              fontSize: 10, cursor: "pointer", padding: 0,
+            }}>
+              {expanded ? "▲ 收起" : "▼ 耗时细项"}
+            </button>
+          </>}
+
           {hasExpandedDetails && (
             <button onClick={() => setExpanded(!expanded)} style={{
               background: "none", border: "none", color: "var(--text-dim)",
@@ -413,6 +432,17 @@ function EventDetail({ event }: { event: NormalizedEvent }) {
                 fontSize: 11, color: "var(--teal)", fontFamily: "var(--font-mono)",
               }}>{text}</span>
             ))}
+          </div>
+        )}
+        {expanded && subtype === "executor_perf" && (p.timing as Record<string, number>) != null && (
+          <div style={{
+            marginTop: 6, display: "flex", gap: 12,
+            borderTop: "1px solid var(--border)", paddingTop: 6,
+            color: "var(--text-dim)", fontSize: 11, fontFamily: "var(--font-mono)",
+          }}>
+            <span>截图: {(p.timing as Record<string, number>).screenshot_s?.toFixed(3)}s</span>
+            <span>OCR: {(p.timing as Record<string, number>).ocr_s?.toFixed(3)}s</span>
+            <span>总计: {(p.timing as Record<string, number>).total_s?.toFixed(3)}s</span>
           </div>
         )}
         {expanded && hasExpandedDetails && (
