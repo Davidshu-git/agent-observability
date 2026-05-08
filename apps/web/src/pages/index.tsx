@@ -163,53 +163,60 @@ function ExecutorStatusCard({
   const failures = `${status?.consecutive_failures ?? 0}/${status?.fail_threshold ?? "—"}`;
 
   return (
-    <div className="card" style={{ marginBottom: "1rem", borderColor: border, background: `linear-gradient(180deg, ${bg}, transparent 120px), var(--card)` }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: "1rem" }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 999, background: color, boxShadow: healthy ? "0 0 0 4px rgba(52,211,153,.12)" : "none" }} />
-            <span style={{ color: "var(--text)", fontWeight: 700, fontSize: 14 }}>Windows Executor</span>
-            <span className="badge" style={{ color, background: bg, border: `1px solid ${border}` }}>{label}</span>
+    <div className="card" style={{ marginBottom: "1rem", borderColor: border, position: "relative", overflow: "hidden" }}>
+      {/* status-tinted gradient overlay — behind all content */}
+      <div style={{ position: "absolute", inset: 0, background: `linear-gradient(180deg, ${bg}, transparent 120px)`, pointerEvents: "none" }} />
+      <div style={{ position: "relative" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: "1rem" }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 999, background: color, boxShadow: healthy ? "0 0 0 4px rgba(52,211,153,.12)" : "none" }} />
+              <span style={{ color: "var(--text)", fontWeight: 700, fontSize: 14 }}>Windows Executor</span>
+              <span className="badge" style={{ color, background: bg, border: `1px solid ${border}` }}>{label}</span>
+              <span className="badge" style={{ color: "var(--text-muted)", background: "var(--border)", border: "1px solid var(--border-hi)", gap: 4 }}>
+                <span>🎮</span><span>mhxy</span>
+              </span>
+            </div>
+            <div style={{ color: "var(--text-dim)", fontSize: 11, marginTop: 3, fontFamily: "var(--font-mono)" }}>
+              {status?.executor_url ?? "mhxy executor"}
+            </div>
           </div>
-          <div style={{ color: "var(--text-dim)", fontSize: 11, marginTop: 3, fontFamily: "var(--font-mono)" }}>
-            {status?.executor_url ?? "mhxy executor"}
-          </div>
+          <button
+            onClick={onRefresh}
+            style={{
+              padding: "4px 10px",
+              borderRadius: "var(--r-sm)",
+              border: "1px solid var(--border-hi)",
+              background: "transparent",
+              color: "var(--blue)",
+              fontSize: 11,
+              fontWeight: 500,
+            }}
+          >
+            刷新
+          </button>
         </div>
-        <button
-          onClick={onRefresh}
-          style={{
-            padding: "4px 10px",
-            borderRadius: "var(--r-sm)",
-            border: "1px solid var(--border-hi)",
-            background: "transparent",
-            color: "var(--blue)",
-            fontSize: 11,
-            fontWeight: 500,
-          }}
-        >
-          刷新
-        </button>
-      </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "0.75rem" }}>
-        <Stat label="PID" value={pid} accent={healthy} />
-        <Stat label="HTTP 延迟" value={latency} accent={healthy} />
-        <Stat label="连续失败" value={failures} accent={!healthy && !stale} />
-        <Stat label="内存" value={mem} />
-        <Stat label="ADB" value={app?.adb === true ? "OK" : app?.adb === false ? "FAIL" : "—"} accent={app?.adb === true} />
-        <Stat label="截图/OCR" value={app ? `${app.screenshot ? "OK" : "FAIL"}/${app.ocr ? "OK" : "FAIL"}` : "—"} accent={app?.screenshot === true && app?.ocr === true} />
-      </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "0.75rem" }}>
+          <Stat label="PID" value={pid} accent={healthy} />
+          <Stat label="HTTP 延迟" value={latency} accent={healthy} />
+          <Stat label="连续失败" value={failures} accent={!healthy && !stale} />
+          <Stat label="内存" value={mem} />
+          <Stat label="ADB" value={app?.adb === true ? "OK" : app?.adb === false ? "FAIL" : "—"} accent={app?.adb === true} />
+          <Stat label="截图/OCR" value={app ? `${app.screenshot ? "OK" : "FAIL"}/${app.ocr ? "OK" : "FAIL"}` : "—"} accent={app?.screenshot === true && app?.ocr === true} />
+        </div>
 
-      <div style={{ marginTop: "0.85rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
-        <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
-          最近检查：{status?.checked_at ? fmtTime(status.checked_at) : "—"}
-          {status?.age_sec !== undefined && status.age_sec !== null && (
-            <span style={{ marginLeft: 6 }}>({formatAge(status.age_sec)})</span>
-          )}
-        </span>
-        <span style={{ color: error || status?.health?.error ? "var(--red)" : "var(--text-dim)", fontSize: 11, maxWidth: 520, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {error || status?.error || status?.health?.error || status?.last_restart?.reason || "watchdog 状态文件正常"}
-        </span>
+        <div style={{ marginTop: "0.85rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
+          <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
+            最近检查：{status?.checked_at ? fmtTime(status.checked_at) : "—"}
+            {status?.age_sec !== undefined && status.age_sec !== null && (
+              <span style={{ marginLeft: 6 }}>({formatAge(status.age_sec)})</span>
+            )}
+          </span>
+          <span style={{ color: error || status?.health?.error ? "var(--red)" : "var(--text-dim)", fontSize: 11, maxWidth: 520, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {error || status?.error || status?.health?.error || status?.last_restart?.reason || "watchdog 状态文件正常"}
+          </span>
+        </div>
       </div>
     </div>
   );
