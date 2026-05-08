@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type ProjectOverview } from "@/lib/api";
+import { api, type MhxyExecutorStatus, type ProjectOverview } from "@/lib/api";
 import { SkeletonCard } from "@/components/Skeleton";
 import { fmt, fmtCost, fmtTime } from "@/lib/format";
 
@@ -20,11 +20,23 @@ export default function OverviewPage() {
   const [rows, setRows] = useState<ProjectOverview[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [executorStatus, setExecutorStatus] = useState<MhxyExecutorStatus | null>(null);
+  const [executorErr, setExecutorErr] = useState("");
   const [syncingKey, setSyncingKey] = useState<string | null>(null);
   const [syncMsgs, setSyncMsgs] = useState<Record<string, string>>({});
 
   function load() {
     api.overview().then(setRows).catch((e) => setErr(String(e)));
+    loadExecutorStatus();
+  }
+
+  function loadExecutorStatus() {
+    api.mhxyExecutorStatus()
+      .then((s) => {
+        setExecutorStatus(s);
+        setExecutorErr("");
+      })
+      .catch((e) => setExecutorErr(String(e)));
   }
 
   useEffect(() => {
@@ -33,6 +45,7 @@ export default function OverviewPage() {
       .then(setRows)
       .catch((e) => setErr(String(e)))
       .finally(() => setLoading(false));
+    loadExecutorStatus();
   }, []);
 
   async function handleSync(projectId: string) {
@@ -116,11 +129,87 @@ export default function OverviewPage() {
         </div>
       )}
 
+      <ExecutorStatusCard status={executorStatus} error={executorErr} onRefresh={loadExecutorStatus} />
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1rem" }}>
         {loading
           ? [0, 1, 2].map((i) => <SkeletonCard key={i} />)
           : rows.map((p) => <ProjectCard key={p.project_id} p={p} syncingKey={syncingKey} syncMsg={syncMsgs[p.project_id]} onSync={handleSync} />)
         }
+      </div>
+    </div>
+  );
+}
+
+function ExecutorStatusCard({
+  status, error, onRefresh,
+}: {
+  status: MhxyExecutorStatus | null;
+  error: string;
+  onRefresh: () => void;
+}) {
+  const state = error ? "unknown" : (status?.status ?? "unknown");
+  const healthy = state === "healthy";
+  const unhealthy = state === "unhealthy";
+  const stale = state === "stale" || status?.stale;
+  const color = healthy ? "var(--green)" : unhealthy ? "var(--red)" : stale ? "var(--amber)" : "var(--text-muted)";
+  const bg = healthy ? "rgba(52,211,153,.10)" : unhealthy ? "rgba(248,113,113,.10)" : stale ? "rgba(251,191,36,.10)" : "rgba(139,154,176,.08)";
+  const border = healthy ? "rgba(52,211,153,.28)" : unhealthy ? "rgba(248,113,113,.28)" : stale ? "rgba(251,191,36,.28)" : "var(--border)";
+  const label = healthy ? "运行正常" : unhealthy ? "异常" : stale ? "状态过期" : "未知";
+  const app = status?.app_health?.[0];
+  const pid = status?.process?.pid ? String(status.process.pid) : "—";
+  const mem = status?.process?.working_set_bytes ? `${Math.round(status.process.working_set_bytes / 1024 / 1024)} MB` : "—";
+  const latency = status?.health?.latency_ms !== undefined ? `${status.health.latency_ms} ms` : "—";
+  const failures = `${status?.consecutive_failures ?? 0}/${status?.fail_threshold ?? "—"}`;
+
+  return (
+    <div className="card" style={{ marginBottom: "1rem", borderColor: border, background: `linear-gradient(180deg, ${bg}, transparent 120px), var(--card)` }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: "1rem" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 999, background: color, boxShadow: healthy ? "0 0 0 4px rgba(52,211,153,.12)" : "none" }} />
+            <span style={{ color: "var(--text)", fontWeight: 700, fontSize: 14 }}>Windows Executor</span>
+            <span className="badge" style={{ color, background: bg, border: `1px solid ${border}` }}>{label}</span>
+          </div>
+          <div style={{ color: "var(--text-dim)", fontSize: 11, marginTop: 3, fontFamily: "var(--font-mono)" }}>
+            {status?.executor_url ?? "mhxy executor"}
+          </div>
+        </div>
+        <button
+          onClick={onRefresh}
+          style={{
+            padding: "4px 10px",
+            borderRadius: "var(--r-sm)",
+            border: "1px solid var(--border-hi)",
+            background: "transparent",
+            color: "var(--blue)",
+            fontSize: 11,
+            fontWeight: 500,
+          }}
+        >
+          刷新
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "0.75rem" }}>
+        <Stat label="PID" value={pid} accent={healthy} />
+        <Stat label="HTTP 延迟" value={latency} accent={healthy} />
+        <Stat label="连续失败" value={failures} accent={!healthy && !stale} />
+        <Stat label="内存" value={mem} />
+        <Stat label="ADB" value={app?.adb === true ? "OK" : app?.adb === false ? "FAIL" : "—"} accent={app?.adb === true} />
+        <Stat label="截图/OCR" value={app ? `${app.screenshot ? "OK" : "FAIL"}/${app.ocr ? "OK" : "FAIL"}` : "—"} accent={app?.screenshot === true && app?.ocr === true} />
+      </div>
+
+      <div style={{ marginTop: "0.85rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
+        <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
+          最近检查：{status?.checked_at ? fmtTime(status.checked_at) : "—"}
+          {status?.age_sec !== undefined && status.age_sec !== null && (
+            <span style={{ marginLeft: 6 }}>({formatAge(status.age_sec)})</span>
+          )}
+        </span>
+        <span style={{ color: error || status?.health?.error ? "var(--red)" : "var(--text-dim)", fontSize: 11, maxWidth: 520, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {error || status?.error || status?.health?.error || status?.last_restart?.reason || "watchdog 状态文件正常"}
+        </span>
       </div>
     </div>
   );
@@ -252,6 +341,12 @@ function ProjectCard({
       </div>
     </div>
   );
+}
+
+function formatAge(sec: number) {
+  if (sec < 60) return `${sec}s 前`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m 前`;
+  return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m 前`;
 }
 
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {

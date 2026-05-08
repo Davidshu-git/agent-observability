@@ -69,6 +69,48 @@ export interface ToolStat {
   calls: number;
 }
 
+export interface MhxyExecutorStatus {
+  service: string;
+  executor_url?: string;
+  status: "healthy" | "unhealthy" | "stale" | "unknown" | string;
+  checked_at?: string;
+  stale?: boolean;
+  age_sec?: number | null;
+  consecutive_failures?: number;
+  fail_threshold?: number;
+  interval_sec?: number;
+  error?: string;
+  health?: {
+    ok?: boolean;
+    status_code?: number;
+    latency_ms?: number;
+    body?: string;
+    error?: string;
+  };
+  app_health?: Array<{
+    port?: string;
+    healthy?: boolean;
+    adb?: boolean;
+    screenshot?: boolean;
+    ocr?: boolean;
+    latency_ms?: number;
+    error?: string;
+  }>;
+  process?: {
+    ok?: boolean;
+    pid?: number;
+    started_at?: string;
+    working_set_bytes?: number;
+    command_line?: string;
+    error?: string;
+  };
+  last_restart?: {
+    ok?: boolean;
+    reason?: string;
+    latency_ms?: number;
+  } | null;
+}
+
 export const api = {
   projects: () => get<Project[]>("/api/projects"),
   overview: () => get<ProjectOverview[]>("/api/stats/overview"),
@@ -94,6 +136,7 @@ export const api = {
     get<TokenByModel[]>("/api/stats/tokens/by-model", project_id ? { project_id } : undefined),
   tools: (project_id?: string) =>
     get<ToolStat[]>("/api/stats/tools", project_id ? { project_id } : undefined),
+  mhxyExecutorStatus: () => get<MhxyExecutorStatus>("/api/external/mhxy-executor/status"),
   think: (params: { project_id?: string; session_id?: string; limit?: number }) =>
     get<NormalizedEvent[]>("/api/think", params),
 

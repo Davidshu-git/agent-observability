@@ -7,8 +7,10 @@ All responses are based on the unified schema; no source-specific fields leak he
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,8 +20,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import get_db, AsyncSessionLocal
 from app.db.models import Agent, DataSource, Event, Project, Session
+from app.config import settings
 
 router = APIRouter(prefix="/api")
+
+
+def _parse_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return None
 
 # ---------------------------------------------------------------------------
 # Pay-per-use model cost config (元 / 百万 tokens)
@@ -136,6 +148,48 @@ async def list_agents(project_id: str, db: AsyncSession = Depends(get_db)):
         }
         for a in agents
     ]
+
+
+# ---------------------------------------------------------------------------
+# External service status
+# ---------------------------------------------------------------------------
+
+@router.get("/external/mhxy-executor/status")
+async def mhxy_executor_status():
+    path = Path(settings.mhxy_executor_status_file)
+    if not path.exists():
+        return {
+            "service": "mhxy_windows_executor",
+            "status": "unknown",
+            "stale": True,
+            "error": f"status file not found: {path}",
+        }
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {
+            "service": "mhxy_windows_executor",
+            "status": "unknown",
+            "stale": True,
+            "error": f"status file unreadable: {exc}",
+        }
+
+    checked_at = _parse_dt(data.get("checked_at"))
+    interval = int(data.get("interval_sec") or 60)
+    stale_after = max(interval * 3, 180)
+    age_sec = None
+    stale = True
+    if checked_at:
+        age_sec = int((datetime.now(timezone.utc) - checked_at.astimezone(timezone.utc)).total_seconds())
+        stale = age_sec > stale_after
+
+    if stale and data.get("status") == "healthy":
+        data = {**data, "status": "stale"}
+    data["stale"] = stale
+    data["age_sec"] = age_sec
+    data["status_file"] = str(path)
+    return data
 
 
 # ---------------------------------------------------------------------------
