@@ -489,6 +489,20 @@ function Timeline({ events, roundsByTrace }: { events: NormalizedEvent[]; rounds
   const types = Array.from(new Set(events.map((e) => e.event_type)));
   const visible = filter === "all" ? events : events.filter((e) => e.event_type === filter);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const prevCountRef = useRef(0);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || events.length === 0) return;
+    const isInitialLoad = prevCountRef.current === 0;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    prevCountRef.current = events.length;
+    const hasHashAnchor = typeof window !== "undefined" && window.location.hash.startsWith("#trace-");
+    if ((isInitialLoad && !hasHashAnchor) || (!isInitialLoad && nearBottom)) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [events.length]);
+
   const traceComplete = new Set(
     events
       .filter((e) => e.event_type === "message" && (e.payload as Record<string, unknown>).role === "assistant")
@@ -517,7 +531,7 @@ function Timeline({ events, roundsByTrace }: { events: NormalizedEvent[]; rounds
         </span>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto" }}>
         {(() => {
           const seenTraceIds = new Set<string>();
           return visible.map((e) => {
@@ -684,13 +698,14 @@ export default function SessionsPage() {
       .finally(() => setLoadingEvents(false));
   }, [selectedId]);
 
-  // Scroll timeline to hash anchor after events load (e.g. returning from trace page)
+  // Scroll timeline to hash anchor after events load, then clear hash
   useEffect(() => {
     if (loadingEvents || events.length === 0) return;
     const hash = window.location.hash;
     if (!hash.startsWith("#trace-")) return;
     const el = document.getElementById(hash.slice(1));
     el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    history.replaceState(null, "", window.location.pathname + window.location.search);
   }, [loadingEvents, events]);
 
   function selectSession(id: string) {
